@@ -1,6 +1,20 @@
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 
+class TransactionItemLine {
+  final String itemName;
+  final int quantity;
+  final double price;
+  final double subtotal;
+
+  TransactionItemLine({
+    required this.itemName,
+    required this.quantity,
+    required this.price,
+    required this.subtotal,
+  });
+}
+
 class ActiveTransaction {
   final int id;
   final int customerId;
@@ -8,7 +22,7 @@ class ActiveTransaction {
   final String date;
   final double totalAmount;
   final double paidAmount;
-  final String itemsSummary;
+  final List<TransactionItemLine> items;
 
   ActiveTransaction({
     required this.id,
@@ -17,7 +31,7 @@ class ActiveTransaction {
     required this.date,
     required this.totalAmount,
     required this.paidAmount,
-    this.itemsSummary = '',
+    this.items = const [],
   });
 
   double get remaining => totalAmount - paidAmount;
@@ -56,15 +70,33 @@ class TransactionsProvider extends ChangeNotifier {
   Future<void> loadActiveTransactions() async {
     try {
       final rows = await _db.getActiveTransactionsWithCustomer();
-      _activeTransactions = rows.map((r) => ActiveTransaction(
-        id: r['id'] as int,
-        customerId: r['customer_id'] as int,
-        customerName: r['customer_name'] as String,
-        date: r['date'] as String,
-        totalAmount: (r['total_amount'] as num).toDouble(),
-        paidAmount: (r['paid_amount'] as num).toDouble(),
-        itemsSummary: (r['items_summary'] as String? ?? ''),
-      )).toList();
+      _activeTransactions = rows.map((r) {
+        final names = (r['item_names'] as String? ?? '').split(',');
+        final qtys = (r['item_qtys'] as String? ?? '').split(',');
+        final prices = (r['item_prices'] as String? ?? '').split(',');
+        final subtotals = (r['item_subtotals'] as String? ?? '').split(',');
+
+        final items = <TransactionItemLine>[];
+        for (int i = 0; i < names.length; i++) {
+          if (names[i].isEmpty) continue;
+          items.add(TransactionItemLine(
+            itemName: names[i],
+            quantity: int.parse(qtys[i]),
+            price: double.parse(prices[i]),
+            subtotal: double.parse(subtotals[i]),
+          ));
+        }
+
+        return ActiveTransaction(
+          id: r['id'] as int,
+          customerId: r['customer_id'] as int,
+          customerName: r['customer_name'] as String,
+          date: r['date'] as String,
+          totalAmount: (r['total_amount'] as num).toDouble(),
+          paidAmount: (r['paid_amount'] as num).toDouble(),
+          items: items,
+        );
+      }).toList();
     } catch (_) {
       _activeTransactions = [];
     }

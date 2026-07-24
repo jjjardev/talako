@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'providers/items_provider.dart';
 import 'providers/customers_provider.dart';
 import 'providers/transactions_provider.dart';
 import 'providers/theme_provider.dart';
@@ -17,7 +16,6 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider(isDark: isDark)),
-        ChangeNotifierProvider(create: (_) => ItemsProvider()),
         ChangeNotifierProvider(create: (_) => CustomersProvider()),
         ChangeNotifierProvider(create: (_) => TransactionsProvider()),
       ],

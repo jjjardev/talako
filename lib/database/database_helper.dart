@@ -354,7 +354,10 @@ class DatabaseHelper {
     final db = await database;
     return await db.rawQuery('''
       SELECT t.*, c.name as customer_name,
-        COALESCE(GROUP_CONCAT(ti.item_name || ' (' || ti.quantity || 'x)'), '') as items_summary
+        COALESCE(GROUP_CONCAT(ti.item_name), '') as item_names,
+        COALESCE(GROUP_CONCAT(ti.quantity), '') as item_qtys,
+        COALESCE(GROUP_CONCAT(ti.price), '') as item_prices,
+        COALESCE(GROUP_CONCAT(ti.subtotal), '') as item_subtotals
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
       LEFT JOIN transaction_items ti ON ti.transaction_id = t.id

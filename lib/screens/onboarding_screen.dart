@@ -18,25 +18,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.store,
       title: 'Welcome to TalaKo',
       body:
-          'A simple, offline app to track your store\'s prices and customer credits.\n\nNo internet required.',
+          'A simple, offline app to track your store\'s utang (credit sales).\n\nNo internet required.',
     ),
     _PageData(
       icon: Icons.sell_outlined,
-      title: 'Price Reference',
+      title: 'Pangolekta Dashboard',
       body:
-          'Add and search all your items and their prices.\n\nTap the + button to add a new item. Use the search bar to find items fast.',
-    ),
-    _PageData(
-      icon: Icons.account_balance_wallet_outlined,
-      title: 'Customer Credits',
-      body:
-          'View all customers with outstanding balances.\n\nOverdue accounts (14+ days) show a red warning. Tap a customer to see their full credit history.',
+          'See all active utang sorted by date, oldest first.\n\nEach tile shows the full item breakdown with prices. Red = overdue (14+ days), orange = 7+ days. Tap Bayad to record a payment.',
     ),
     _PageData(
       icon: Icons.add_circle_outline,
       title: 'Recording Credits',
       body:
           'Tap the + button to record a credit.\n\nType the customer name and item \u2014 suggestions appear automatically. You can add multiple items for the same customer.',
+    ),
+    _PageData(
+      icon: Icons.settings,
+      title: 'Settings & Backup',
+      body:
+          'View settled debts, restore backups, and toggle dark/light mode from the Settings tab.',
     ),
   ];
 

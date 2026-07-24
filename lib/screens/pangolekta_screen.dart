@@ -156,11 +156,64 @@ class _TransactionTile extends StatelessWidget {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
                   ),
                 ),
+                Text(daysLabel,
+                  style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(3),
+                1: FlexColumnWidth(2),
+                2: FlexColumnWidth(2),
+              },
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              children: [
+                for (final item in t.items)
+                  TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(item.itemName,
+                          style: TextStyle(fontSize: 13, color: textColor)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text('${item.quantity} x ${formatCurrency(item.price)}',
+                          style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7)),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(formatCurrency(item.subtotal),
+                          style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const Divider(height: 16),
+            Row(
+              children: [
+                Text('Total: ${formatCurrency(t.totalAmount)}',
+                  style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
+                if (t.paidAmount > 0) ...[
+                  const SizedBox(width: 8),
+                  Text('Paid: ${formatCurrency(t.paidAmount)}',
+                    style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
+                ],
+                const Spacer(),
+                Text(formatCurrency(t.remaining),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                const SizedBox(width: 8),
                 SizedBox(
-                  height: 40,
+                  height: 36,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.payments, size: 18),
-                    label: const Text('Bayad', style: TextStyle(fontSize: 15)),
+                    label: const Text('Bayad', style: TextStyle(fontSize: 14)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
@@ -170,22 +223,6 @@ class _TransactionTile extends StatelessWidget {
                     onPressed: () => _openBayad(context),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(t.itemsSummary,
-              style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7)),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(daysLabel,
-                  style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
-                const Spacer(),
-                Text(formatCurrency(t.remaining),
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
               ],
             ),
           ],

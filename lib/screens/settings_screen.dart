@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers/theme_provider.dart';
-import '../providers/items_provider.dart';
 import '../providers/customers_provider.dart';
 import '../providers/transactions_provider.dart';
 import '../database/database_helper.dart';
@@ -147,7 +146,6 @@ class SettingsScreen extends StatelessWidget {
 
       if (context.mounted) {
         context.read<CustomersProvider>().loadCustomers();
-        context.read<ItemsProvider>().loadItems();
         context.read<TransactionsProvider>().loadActiveTransactions();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored successfully')));
       }
@@ -218,7 +216,6 @@ class SettingsScreen extends StatelessWidget {
 
       if (context.mounted) {
         context.read<CustomersProvider>().loadCustomers();
-        context.read<ItemsProvider>().loadItems();
         context.read<TransactionsProvider>().loadActiveTransactions();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database restored successfully')));
       }

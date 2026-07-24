@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'pangolekta_screen.dart';
-import 'credit_list_screen.dart';
 import 'settings_screen.dart';
 import 'add_utang_sheet.dart';
 import '../providers/transactions_provider.dart';
@@ -18,7 +17,6 @@ class _MainShellState extends State<MainShell> {
 
   static const _screens = <Widget>[
     PangolektaScreen(),
-    CreditListScreen(),
     SettingsScreen(),
   ];
 
@@ -41,18 +39,13 @@ class _MainShellState extends State<MainShell> {
             label: 'Pangolekta',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Customers',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: 'Settings',
           ),
         ],
       ),
-      floatingActionButton: _currentIndex < 2
+      floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
               onPressed: () {
                 showModalBottomSheet(
