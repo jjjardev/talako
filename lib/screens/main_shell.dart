@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import 'price_list_screen.dart';
+import 'package:provider/provider.dart';
+import 'pangolekta_screen.dart';
 import 'credit_list_screen.dart';
-import 'add_credit_screen.dart';
+import 'settings_screen.dart';
+import 'add_utang_sheet.dart';
+import '../providers/transactions_provider.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -13,37 +16,60 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
+  static const _screens = <Widget>[
+    PangolektaScreen(),
+    CreditListScreen(),
+    SettingsScreen(),
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _currentIndex == 0
-          ? const PriceListScreen()
-          : const CreditListScreen(),
+      body: _screens[_currentIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
+          if (index == 0) {
+            context.read<TransactionsProvider>().loadActiveTransactions();
+          }
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.sell_outlined),
-            label: 'Prices',
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Pangolekta',
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            label: 'Credits',
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people),
+            label: 'Customers',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AddCreditScreen()),
-          );
-        },
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _currentIndex < 2
+          ? FloatingActionButton(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  useSafeArea: true,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  builder: (_) => const AddUtangSheet(),
+                ).then((_) {
+                  context.read<TransactionsProvider>().loadActiveTransactions();
+                });
+              },
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 }

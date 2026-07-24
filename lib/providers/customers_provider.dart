@@ -3,16 +3,18 @@ import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/customer.dart';
 import '../models/customer_summary.dart';
-import '../models/credit_entry.dart';
+import '../models/transaction.dart' as txn_model;
+import '../models/transaction_item.dart';
 
 class CustomersProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
   List<CustomerSummary> _summaries = [];
+  List<Customer> _allCustomers = [];
   String _search = '';
   Timer? _debounce;
 
   List<CustomerSummary> get summaries => _summaries;
-  List<Customer> get customers => _summaries.map((s) => s.customer).toList();
+  List<Customer> get customers => _allCustomers;
 
   Future<void> loadCustomers() async {
     try {
@@ -20,6 +22,7 @@ class CustomersProvider extends ChangeNotifier {
       final overdueIds = await _db.getAllOverdueCustomerIds();
 
       final summaries = <CustomerSummary>[];
+      final allCustomers = <Customer>[];
 
       for (final row in rows) {
         final id = row['id'] as int;
@@ -31,9 +34,24 @@ class CustomersProvider extends ChangeNotifier {
         summaries.add(CustomerSummary(customer: customer, balance: balance, hasOverdue: overdue));
       }
 
+      if (_search.isEmpty) {
+        allCustomers.addAll(summaries.map((s) => s.customer));
+      }
+
       _summaries = summaries;
+      _allCustomers = allCustomers;
     } catch (_) {
       _summaries = [];
+      _allCustomers = [];
+    }
+    notifyListeners();
+  }
+
+  Future<void> loadAllCustomers() async {
+    try {
+      _allCustomers = await _db.getAllCustomers(search: _search);
+    } catch (_) {
+      _allCustomers = [];
     }
     notifyListeners();
   }
@@ -52,7 +70,10 @@ class CustomersProvider extends ChangeNotifier {
   void setSearch(String query) {
     _search = query;
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), loadCustomers);
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      loadCustomers();
+      loadAllCustomers();
+    });
   }
 
   Future<Customer?> getOrCreateCustomer(String name) async {
@@ -64,38 +85,27 @@ class CustomersProvider extends ChangeNotifier {
     return customer;
   }
 
-  Future<List<CreditEntry>> getCredits(int customerId) async {
-    return await _db.getCreditsByCustomer(customerId);
+  Future<List<txn_model.Transaction>> getTransactions(int customerId) async {
+    return await _db.getTransactionsByCustomer(customerId);
   }
 
-  Future<List<CreditEntry>> getUnsettledCredits(int customerId) async {
-    return await _db.getUnsettledCreditsByCustomer(customerId);
+  Future<List<txn_model.Transaction>> getActiveTransactions(int customerId) async {
+    return await _db.getActiveTransactionsByCustomer(customerId);
   }
 
-  Future<List<CreditEntry>> getSettledCredits(int customerId) async {
-    return await _db.getSettledCreditsByCustomer(customerId);
+  Future<List<txn_model.Transaction>> getPaidTransactions(int customerId) async {
+    return await _db.getPaidTransactionsByCustomer(customerId);
+  }
+
+  Future<List<TransactionItem>> getItems(int transactionId) async {
+    return await _db.getItemsByTransaction(transactionId);
   }
 
   Future<double> getOutstandingBalance(int customerId) async {
-    return await _db.getOutstandingBalance(customerId);
+    return await _db.getCustomerOutstandingBalance(customerId);
   }
 
-  Future<bool> hasOverdueCredits(int customerId) async {
-    return await _db.hasOverdueCredits(customerId);
+  Future<bool> hasOverdueTransactions(int customerId) async {
+    return await _db.hasOverdueTransactions(customerId);
   }
-
-  Future<void> addCredit(CreditEntry credit) async {
-    try {
-      await _db.insertCredit(credit);
-    } catch (_) {}
-    await loadCustomers();
-  }
-
-  Future<void> updatePaidAmount(int creditId, double amount) async {
-    try {
-      await _db.updateCreditPaidAmount(creditId, amount);
-    } catch (_) {}
-    await loadCustomers();
-  }
-
 }

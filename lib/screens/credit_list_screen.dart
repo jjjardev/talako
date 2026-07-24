@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../providers/customers_provider.dart';
 import '../widgets/customer_tile.dart';
 import 'customer_detail_screen.dart';
-import 'settings_screen.dart';
 
 class CreditListScreen extends StatefulWidget {
   const CreditListScreen({super.key});
@@ -33,13 +32,8 @@ class _CreditListScreenState extends State<CreditListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Credits'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
-          ),
-        ],
+        title: const Text('Customers'),
+        centerTitle: true,
       ),
       body: Column(
         children: [
@@ -62,7 +56,7 @@ class _CreditListScreenState extends State<CreditListScreen> {
             child: Consumer<CustomersProvider>(
               builder: (context, provider, _) {
                 if (provider.summaries.isEmpty) {
-                  return const Center(child: Text('No active credits. Tap + to add.'));
+                  return const Center(child: Text('No customers with active utang'));
                 }
                 return ListView.builder(
                   itemCount: provider.summaries.length,

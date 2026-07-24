@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../providers/theme_provider.dart';
 import '../providers/items_provider.dart';
 import '../providers/customers_provider.dart';
+import '../providers/transactions_provider.dart';
 import '../database/database_helper.dart';
 import 'settled_debts_screen.dart';
 
@@ -17,7 +18,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: const Text('Settings'), centerTitle: true),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -40,7 +41,7 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.check_circle_outline),
                   title: const Text('Settled Debts'),
-                  subtitle: const Text('View fully paid credits'),
+                  subtitle: const Text('View fully paid customers'),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettledDebtsScreen())),
                 ),
               ],
@@ -67,7 +68,7 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.save_alt_outlined),
                   title: const Text('Export Raw Database'),
-                  subtitle: const Text('Save a raw .db copy'),
+                  subtitle: const Text('Save and share a copy of the database'),
                   onTap: () => _exportRawDb(context),
                 ),
                 const Divider(height: 1),
@@ -135,7 +136,7 @@ class SettingsScreen extends StatelessWidget {
       final jsonString = await file.readAsString();
       final data = jsonDecode(jsonString) as Map<String, dynamic>;
 
-      if (!data.containsKey('items') || !data.containsKey('customers') || !data.containsKey('credits')) {
+      if (!data.containsKey('items') || !data.containsKey('customers')) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid backup file')));
         }
@@ -147,6 +148,7 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         context.read<CustomersProvider>().loadCustomers();
         context.read<ItemsProvider>().loadItems();
+        context.read<TransactionsProvider>().loadActiveTransactions();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored successfully')));
       }
     } catch (e) {
@@ -169,11 +171,12 @@ class SettingsScreen extends StatelessWidget {
       }
 
       final dir = await getApplicationDocumentsDirectory();
-      final destPath = '${dir.path}/talako_backup_${DateTime.now().millisecondsSinceEpoch}.db';
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final destPath = '${dir.path}/talako_backup_$timestamp.db';
       await srcFile.copy(destPath);
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Database saved to: $destPath')));
+        await Share.shareXFiles([XFile(destPath)], subject: 'TalaKo Database Backup');
       }
     } catch (e) {
       if (context.mounted) {
@@ -216,6 +219,7 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         context.read<CustomersProvider>().loadCustomers();
         context.read<ItemsProvider>().loadItems();
+        context.read<TransactionsProvider>().loadActiveTransactions();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database restored successfully')));
       }
     } catch (e) {

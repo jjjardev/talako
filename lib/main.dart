@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/items_provider.dart';
 import 'providers/customers_provider.dart';
-
+import 'providers/transactions_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/main_shell.dart';
 import 'screens/onboarding_screen.dart';
@@ -19,6 +19,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider(isDark: isDark)),
         ChangeNotifierProvider(create: (_) => ItemsProvider()),
         ChangeNotifierProvider(create: (_) => CustomersProvider()),
+        ChangeNotifierProvider(create: (_) => TransactionsProvider()),
       ],
       child: TalaKoApp(hasSeenOnboarding: onboardingSeen),
     ),
