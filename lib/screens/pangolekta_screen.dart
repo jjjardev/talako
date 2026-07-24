@@ -43,7 +43,6 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
               ),
             );
           }
-
           return Column(
             children: [
               _buildSummaryBar(provider),
@@ -53,7 +52,7 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
                   itemCount: provider.activeTransactions.length,
                   itemBuilder: (context, index) {
                     final t = provider.activeTransactions[index];
-                    return _buildTransactionTile(context, provider, t);
+                    return _TransactionTile(t: t);
                   },
                 ),
               ),
@@ -110,15 +109,16 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
       ),
     );
   }
+}
 
-  Widget _buildTransactionTile(BuildContext context, TransactionsProvider provider, Map<String, dynamic> t) {
-    final txnId = t['id'] as int;
-    final customerName = t['customer_name'] as String;
-    final totalAmount = (t['total_amount'] as num).toDouble();
-    final paidAmount = (t['paid_amount'] as num).toDouble();
-    final remaining = totalAmount - paidAmount;
-    final dateStr = t['date'] as String;
-    final txnDate = DateTime.parse(dateStr);
+class _TransactionTile extends StatelessWidget {
+  final ActiveTransaction t;
+
+  const _TransactionTile({required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    final txnDate = DateTime.parse(t.date);
     final daysAgo = DateTime.now().difference(txnDate).inDays;
     final cutoff14 = DateTime.now().subtract(const Duration(days: 14));
     final cutoff7 = DateTime.now().subtract(const Duration(days: 7));
@@ -129,15 +129,15 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
     if (txnDate.isBefore(cutoff14)) {
       bgColor = Colors.red.shade50;
       textColor = Colors.red.shade800;
-      daysLabel = '$daysAgo days ago (Overdue!)';
+      daysLabel = '$daysAgo days (Overdue!)';
     } else if (txnDate.isBefore(cutoff7)) {
       bgColor = Colors.orange.shade50;
       textColor = Colors.orange.shade800;
-      daysLabel = '$daysAgo days ago';
+      daysLabel = '$daysAgo days';
     } else {
       bgColor = Colors.grey.shade50;
       textColor = Colors.grey.shade800;
-      daysLabel = daysAgo == 0 ? 'Today' : '$daysAgo days ago';
+      daysLabel = daysAgo == 0 ? 'Today' : '$daysAgo days';
     }
 
     return Card(
@@ -145,38 +145,48 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
       color: bgColor,
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    customerName,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    t.customerName,
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
                   ),
-                  const SizedBox(height: 4),
-                  Text(daysLabel, style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.7))),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Balance: ${formatCurrency(remaining)}',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textColor),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(
-              height: 48,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.payments, size: 20),
-                label: const Text('Bayad', style: TextStyle(fontSize: 16)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                onPressed: () => _openBayadSheet(context, txnId, customerName, remaining),
-              ),
+                SizedBox(
+                  height: 40,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.payments, size: 18),
+                    label: const Text('Bayad', style: TextStyle(fontSize: 15)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                    onPressed: () => _openBayad(context),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(t.itemsSummary,
+              style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(daysLabel,
+                  style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+                const Spacer(),
+                Text(formatCurrency(t.remaining),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+              ],
             ),
           ],
         ),
@@ -184,7 +194,7 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
     );
   }
 
-  void _openBayadSheet(BuildContext context, int transactionId, String customerName, double remaining) {
+  void _openBayad(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -193,9 +203,9 @@ class _PangolektaScreenState extends State<PangolektaScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => BayadSheet(
-        transactionId: transactionId,
-        customerName: customerName,
-        remainingBalance: remaining,
+        transactionId: t.id,
+        customerName: t.customerName,
+        remainingBalance: t.remaining,
       ),
     ).then((_) {
       context.read<TransactionsProvider>().loadActiveTransactions();

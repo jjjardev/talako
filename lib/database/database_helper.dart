@@ -353,10 +353,13 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer() async {
     final db = await database;
     return await db.rawQuery('''
-      SELECT t.*, c.name as customer_name
+      SELECT t.*, c.name as customer_name,
+        COALESCE(GROUP_CONCAT(ti.item_name || ' (' || ti.quantity || 'x)'), '') as items_summary
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
+      LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
       WHERE t.paid_amount < t.total_amount
+      GROUP BY t.id
       ORDER BY t.date ASC
     ''');
   }

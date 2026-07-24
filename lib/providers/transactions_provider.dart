@@ -1,20 +1,37 @@
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
-import '../models/transaction_item.dart';
+
+class ActiveTransaction {
+  final int id;
+  final int customerId;
+  final String customerName;
+  final String date;
+  final double totalAmount;
+  final double paidAmount;
+  final String itemsSummary;
+
+  ActiveTransaction({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.date,
+    required this.totalAmount,
+    required this.paidAmount,
+    this.itemsSummary = '',
+  });
+
+  double get remaining => totalAmount - paidAmount;
+}
 
 class TransactionsProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
-  List<Map<String, dynamic>> _activeTransactions = [];
+  List<ActiveTransaction> _activeTransactions = [];
 
-  List<Map<String, dynamic>> get activeTransactions => _activeTransactions;
+  List<ActiveTransaction> get activeTransactions => _activeTransactions;
 
   double get totalOutstanding {
     double sum = 0;
-    for (final t in _activeTransactions) {
-      final total = (t['total_amount'] as num).toDouble();
-      final paid = (t['paid_amount'] as num).toDouble();
-      sum += total - paid;
-    }
+    for (final t in _activeTransactions) sum += t.remaining;
     return sum;
   }
 
@@ -22,12 +39,7 @@ class TransactionsProvider extends ChangeNotifier {
     final cutoff = DateTime.now().subtract(const Duration(days: 14));
     double sum = 0;
     for (final t in _activeTransactions) {
-      final date = DateTime.parse(t['date'] as String);
-      if (date.isBefore(cutoff)) {
-        final total = (t['total_amount'] as num).toDouble();
-        final paid = (t['paid_amount'] as num).toDouble();
-        sum += total - paid;
-      }
+      if (DateTime.parse(t.date).isBefore(cutoff)) sum += t.remaining;
     }
     return sum;
   }
@@ -36,26 +48,27 @@ class TransactionsProvider extends ChangeNotifier {
     final cutoff = DateTime.now().subtract(const Duration(days: 14));
     int count = 0;
     for (final t in _activeTransactions) {
-      final date = DateTime.parse(t['date'] as String);
-      if (date.isBefore(cutoff)) count++;
+      if (DateTime.parse(t.date).isBefore(cutoff)) { count++; }
     }
     return count;
   }
 
   Future<void> loadActiveTransactions() async {
     try {
-      _activeTransactions = await _db.getActiveTransactionsWithCustomer();
+      final rows = await _db.getActiveTransactionsWithCustomer();
+      _activeTransactions = rows.map((r) => ActiveTransaction(
+        id: r['id'] as int,
+        customerId: r['customer_id'] as int,
+        customerName: r['customer_name'] as String,
+        date: r['date'] as String,
+        totalAmount: (r['total_amount'] as num).toDouble(),
+        paidAmount: (r['paid_amount'] as num).toDouble(),
+        itemsSummary: (r['items_summary'] as String? ?? ''),
+      )).toList();
     } catch (_) {
       _activeTransactions = [];
     }
     notifyListeners();
-  }
-
-  Future<void> addTransaction(int customerId, List<Map<String, dynamic>> items) async {
-    try {
-      await _db.insertTransactionWithItems(customerId, items);
-    } catch (_) {}
-    await loadActiveTransactions();
   }
 
   Future<String?> addTransactionWithItemNames(
@@ -87,9 +100,5 @@ class TransactionsProvider extends ChangeNotifier {
       await _db.updateTransactionPayment(transactionId, amount);
     } catch (_) {}
     await loadActiveTransactions();
-  }
-
-  Future<List<TransactionItem>> getItems(int transactionId) async {
-    return await _db.getItemsByTransaction(transactionId);
   }
 }
