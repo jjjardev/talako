@@ -18,13 +18,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       icon: Icons.store,
       title: 'Welcome to TalaKo',
       body:
-          'A simple, offline app to track your store\'s utang (credit sales).\n\nNo internet required.',
+          'A simple, offline app to track your store\'s credit sales.\n\nNo internet required.',
     ),
     _PageData(
-      icon: Icons.sell_outlined,
-      title: 'Pangolekta Dashboard',
+      icon: Icons.receipt_long,
+      title: 'Collections Dashboard',
       body:
-          'See all active utang sorted by date, oldest first.\n\nEach tile shows the full item breakdown with prices. Red = overdue (14+ days), orange = 7+ days. Tap Bayad to record a payment.',
+          'See all active debts sorted by date, oldest first.\n\nEach tile shows the full item breakdown with prices. Red = overdue (14+ days), orange = 7+ days. Tap Pay to record a payment.',
     ),
     _PageData(
       icon: Icons.add_circle_outline,

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'pangolekta_screen.dart';
+import 'collections_screen.dart';
 import 'settings_screen.dart';
-import 'add_utang_sheet.dart';
+import 'add_credit_sheet.dart';
 import '../providers/transactions_provider.dart';
 
 class MainShell extends StatefulWidget {
@@ -16,7 +16,7 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
   static const _screens = <Widget>[
-    PangolektaScreen(),
+    CollectionsScreen(),
     SettingsScreen(),
   ];
 
@@ -36,7 +36,7 @@ class _MainShellState extends State<MainShell> {
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
-            label: 'Pangolekta',
+            label: 'Collections',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
@@ -55,7 +55,7 @@ class _MainShellState extends State<MainShell> {
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                   ),
-                  builder: (_) => const AddUtangSheet(),
+                  builder: (_) => const AddCreditSheet(),
                 ).then((_) {
                   context.read<TransactionsProvider>().loadActiveTransactions();
                 });

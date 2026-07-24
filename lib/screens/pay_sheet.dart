@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
 
-class BayadSheet extends StatefulWidget {
+class PaySheet extends StatefulWidget {
   final int transactionId;
   final String customerName;
   final double remainingBalance;
 
-  const BayadSheet({
+  const PaySheet({
     super.key,
     required this.transactionId,
     required this.customerName,
@@ -17,10 +17,10 @@ class BayadSheet extends StatefulWidget {
   });
 
   @override
-  State<BayadSheet> createState() => _BayadSheetState();
+  State<PaySheet> createState() => _PaySheetState();
 }
 
-class _BayadSheetState extends State<BayadSheet> {
+class _PaySheetState extends State<PaySheet> {
   String _input = '';
 
   double get _displayAmount => double.tryParse(_input) ?? 0;
@@ -45,7 +45,7 @@ class _BayadSheetState extends State<BayadSheet> {
             children: [
               const Icon(Icons.payments, size: 24, color: Colors.green),
               const SizedBox(width: 8),
-              Text('Bayad - ${widget.customerName}',
+              Text('Pay - ${widget.customerName}',
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const Spacer(),
               IconButton(

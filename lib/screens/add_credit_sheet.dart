@@ -5,14 +5,14 @@ import '../providers/customers_provider.dart';
 import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
 
-class AddUtangSheet extends StatefulWidget {
-  const AddUtangSheet({super.key});
+class AddCreditSheet extends StatefulWidget {
+  const AddCreditSheet({super.key});
 
   @override
-  State<AddUtangSheet> createState() => _AddUtangSheetState();
+  State<AddCreditSheet> createState() => _AddCreditSheetState();
 }
 
-class _AddUtangSheetState extends State<AddUtangSheet> {
+class _AddCreditSheetState extends State<AddCreditSheet> {
   final _db = DatabaseHelper.instance;
   final _customerController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
@@ -96,7 +96,7 @@ class _AddUtangSheetState extends State<AddUtangSheet> {
       } else {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Utang added successfully'), duration: Duration(seconds: 2)),
+          const SnackBar(content: Text('Credit added successfully'), duration: Duration(seconds: 2)),
         );
       }
     }
@@ -121,7 +121,7 @@ class _AddUtangSheetState extends State<AddUtangSheet> {
               children: [
                 const Icon(Icons.add_circle_outline, size: 24),
                 const SizedBox(width: 8),
-                const Text('Add Utang', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Text('New Credit', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -191,7 +191,7 @@ class _AddUtangSheetState extends State<AddUtangSheet> {
                 ),
                 child: _saving
                     ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Save Utang', style: TextStyle(fontSize: 18)),
+                    : const Text('Save Credit', style: TextStyle(fontSize: 18)),
               ),
             ),
             const SizedBox(height: 16),
