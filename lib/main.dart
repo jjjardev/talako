@@ -11,7 +11,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   final isDark = prefs.getBool('theme_mode') ?? true;
-  final onboardingSeen = prefs.getBool('onboarding_seen') ?? false;
+  const requiredVersion = 2;
+  final storedVersion = prefs.getInt('onboarding_version') ?? 0;
+  final showOnboarding = storedVersion < requiredVersion;
   runApp(
     MultiProvider(
       providers: [
@@ -19,15 +21,15 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CustomersProvider()),
         ChangeNotifierProvider(create: (_) => TransactionsProvider()),
       ],
-      child: TalaKoApp(hasSeenOnboarding: onboardingSeen),
+      child: TalaKoApp(showOnboarding: showOnboarding),
     ),
   );
 }
 
 class TalaKoApp extends StatelessWidget {
-  final bool hasSeenOnboarding;
+  final bool showOnboarding;
 
-  const TalaKoApp({super.key, required this.hasSeenOnboarding});
+  const TalaKoApp({super.key, required this.showOnboarding});
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +57,9 @@ class TalaKoApp extends StatelessWidget {
               brightness: Brightness.light,
             ),
           ),
-          home: hasSeenOnboarding
-              ? const MainShell()
-              : const OnboardingScreen(),
+          home: showOnboarding
+              ? const OnboardingScreen()
+              : const MainShell(),
         );
       },
     );

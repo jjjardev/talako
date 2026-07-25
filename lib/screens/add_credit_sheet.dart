@@ -100,12 +100,12 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
           SnackBar(
             content: const Text('Credit added'),
             duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'Undo',
-              onPressed: () {
-                messenger.hideCurrentSnackBar();
-                txnProvider.deleteTransaction(txnId);
-              },
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () {
+                  messenger.clearSnackBars();
+                  txnProvider.deleteTransaction(txnId);
+                },
             ),
           ),
         );

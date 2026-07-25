@@ -324,7 +324,7 @@ class _TransactionTile extends StatelessWidget {
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () {
-              messenger.hideCurrentSnackBar();
+              messenger.clearSnackBars();
               provider.reversePayment(t.id, amount);
             },
           ),
