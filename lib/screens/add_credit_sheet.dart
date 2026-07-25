@@ -94,14 +94,16 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         customer.id!, itemNames, quantities, prices);
       if (mounted) {
         setState(() => _saving = false);
+        final messenger = ScaffoldMessenger.of(context);
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(
             content: const Text('Credit added'),
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
               label: 'Undo',
               onPressed: () {
+                messenger.hideCurrentSnackBar();
                 txnProvider.deleteTransaction(txnId);
               },
             ),

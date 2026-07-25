@@ -315,14 +315,17 @@ class _TransactionTile extends StatelessWidget {
     );
     if (amount != null && context.mounted) {
       final isFull = (amount - t.remaining).abs() < 0.01;
-      ScaffoldMessenger.of(context).showSnackBar(
+      final messenger = ScaffoldMessenger.of(context);
+      final provider = context.read<TransactionsProvider>();
+      messenger.showSnackBar(
         SnackBar(
           content: Text(isFull ? 'Payment complete!' : 'Payment of ${formatCurrency(amount)} recorded'),
           duration: const Duration(seconds: 4),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () {
-              context.read<TransactionsProvider>().reversePayment(t.id, amount);
+              messenger.hideCurrentSnackBar();
+              provider.reversePayment(t.id, amount);
             },
           ),
         ),
