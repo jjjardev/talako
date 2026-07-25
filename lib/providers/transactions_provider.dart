@@ -37,11 +37,45 @@ class ActiveTransaction {
   double get remaining => totalAmount - paidAmount;
 }
 
+class GroupedCustomer {
+  final String customerName;
+  final double totalAmount;
+  final double paidAmount;
+  final int transactionCount;
+  final String oldestDate;
+  final String latestDate;
+
+  GroupedCustomer({
+    required this.customerName,
+    required this.totalAmount,
+    required this.paidAmount,
+    required this.transactionCount,
+    required this.oldestDate,
+    required this.latestDate,
+  });
+
+  double get remaining => totalAmount - paidAmount;
+}
+
 class TransactionsProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
   List<ActiveTransaction> _activeTransactions = [];
+  List<GroupedCustomer> _groupedCustomers = [];
+  bool _isGrouped = false;
 
   List<ActiveTransaction> get activeTransactions => _activeTransactions;
+  List<GroupedCustomer> get groupedCustomers => _groupedCustomers;
+  bool get isGrouped => _isGrouped;
+
+  void toggleGrouped() {
+    _isGrouped = !_isGrouped;
+    notifyListeners();
+  }
+
+  void setGrouped(bool value) {
+    _isGrouped = value;
+    notifyListeners();
+  }
 
   double get totalOutstanding {
     double sum = 0;
@@ -103,34 +137,58 @@ class TransactionsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> addTransactionWithItemNames(
+  Future<void> loadGroupedTransactions() async {
+    try {
+      final rows = await _db.getGroupedActiveTransactions();
+      _groupedCustomers = rows.map((r) => GroupedCustomer(
+        customerName: r['customer_name'] as String,
+        totalAmount: (r['total_amount'] as num).toDouble(),
+        paidAmount: (r['paid_amount'] as num).toDouble(),
+        transactionCount: (r['transaction_count'] as int),
+        oldestDate: r['oldest_date'] as String,
+        latestDate: r['latest_date'] as String,
+      )).toList();
+    } catch (_) {
+      _groupedCustomers = [];
+    }
+    notifyListeners();
+  }
+
+  Future<int> addTransactionWithItemNames(
     int customerId,
     List<String> itemNames,
     List<int> quantities,
     List<double> prices,
   ) async {
-    try {
-      final items = <Map<String, dynamic>>[];
-      for (int i = 0; i < itemNames.length; i++) {
-        final subtotal = quantities[i] * prices[i];
-        items.add({
-          'item_name': itemNames[i],
-          'quantity': quantities[i],
-          'price': prices[i],
-          'subtotal': subtotal.toDouble(),
-        });
-      }
-      await _db.insertTransactionWithItems(customerId, items);
-      return null;
-    } catch (e) {
-      return e.toString();
+    final items = <Map<String, dynamic>>[];
+    for (int i = 0; i < itemNames.length; i++) {
+      final subtotal = quantities[i] * prices[i];
+      items.add({
+        'item_name': itemNames[i],
+        'quantity': quantities[i],
+        'price': prices[i],
+        'subtotal': subtotal.toDouble(),
+      });
     }
+    final txnId = await _db.insertTransactionWithItems(customerId, items);
+    await loadActiveTransactions();
+    return txnId;
   }
 
   Future<void> processPayment(int transactionId, double amount) async {
     try {
       await _db.updateTransactionPayment(transactionId, amount);
     } catch (_) {}
+    await loadActiveTransactions();
+  }
+
+  Future<void> deleteTransaction(int transactionId) async {
+    await _db.deleteTransaction(transactionId);
+    await loadActiveTransactions();
+  }
+
+  Future<void> reversePayment(int transactionId, double amount) async {
+    await _db.reverseTransactionPayment(transactionId, amount);
     await loadActiveTransactions();
   }
 }

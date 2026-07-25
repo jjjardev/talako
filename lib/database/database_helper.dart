@@ -329,10 +329,12 @@ class DatabaseHelper {
     final txn = await db.query('transactions', where: 'id = ?', whereArgs: [transactionId]);
     if (txn.isEmpty) return 0;
     final total = (txn.first['total_amount'] as num).toDouble();
-    final status = newPaidAmount >= total ? 'PAID' : 'ACTIVE';
+    final currentPaid = (txn.first['paid_amount'] as num).toDouble();
+    final updatedPaid = currentPaid + newPaidAmount;
+    final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
     return await db.update(
       'transactions',
-      {'paid_amount': newPaidAmount, 'status': status},
+      {'paid_amount': updatedPaid, 'status': status},
       where: 'id = ?',
       whereArgs: [transactionId],
     );
@@ -367,6 +369,45 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<int> deleteTransaction(int transactionId) async {
+    final db = await database;
+    await db.delete('transaction_items', where: 'transaction_id = ?', whereArgs: [transactionId]);
+    return await db.delete('transactions', where: 'id = ?', whereArgs: [transactionId]);
+  }
+
+  Future<int> reverseTransactionPayment(int transactionId, double amount) async {
+    final db = await database;
+    final txn = await db.query('transactions', where: 'id = ?', whereArgs: [transactionId]);
+    if (txn.isEmpty) return 0;
+    final total = (txn.first['total_amount'] as num).toDouble();
+    final currentPaid = (txn.first['paid_amount'] as num).toDouble();
+    final updatedPaid = (currentPaid - amount).clamp(0, total);
+    final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
+    return await db.update(
+      'transactions',
+      {'paid_amount': updatedPaid, 'status': status},
+      where: 'id = ?',
+      whereArgs: [transactionId],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getGroupedActiveTransactions() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT c.name as customer_name,
+        SUM(t.total_amount) as total_amount,
+        SUM(t.paid_amount) as paid_amount,
+        COUNT(t.id) as transaction_count,
+        MIN(t.date) as oldest_date,
+        MAX(t.date) as latest_date
+      FROM transactions t
+      INNER JOIN customers c ON c.id = t.customer_id
+      WHERE t.paid_amount < t.total_amount
+      GROUP BY c.id
+      ORDER BY MIN(t.date) ASC
+    ''');
+  }
+
   // ─── Transaction Items ──────────────────────────────────────────────
 
   Future<int> insertTransactionItem(TransactionItem item) async {
@@ -374,14 +415,14 @@ class DatabaseHelper {
     return await db.insert('transaction_items', item.toMap());
   }
 
-  Future<void> insertTransactionWithItems(int customerId, List<Map<String, dynamic>> items) async {
+  Future<int> insertTransactionWithItems(int customerId, List<Map<String, dynamic>> items) async {
     final db = await database;
     final date = DateTime.now().toIso8601String();
     double totalAmount = 0;
     for (final item in items) {
       totalAmount += (item['subtotal'] as num).toDouble();
     }
-    await db.transaction((txn) async {
+    return await db.transaction<int>((txn) async {
       final txnId = await txn.insert('transactions', {
         'customer_id': customerId,
         'date': date,
@@ -398,6 +439,7 @@ class DatabaseHelper {
           'subtotal': item['subtotal'],
         });
       }
+      return txnId;
     });
   }
 

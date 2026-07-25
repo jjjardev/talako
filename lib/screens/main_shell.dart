@@ -36,7 +36,7 @@ class _MainShellState extends State<MainShell> {
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
-            label: 'Collections',
+            label: 'Credit Book',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

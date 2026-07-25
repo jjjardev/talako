@@ -223,15 +223,7 @@ class _PaySheetState extends State<PaySheet> {
       await provider.processPayment(widget.transactionId, newPaid);
     }
     if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isFullPayment
-              ? 'Payment complete!'
-              : 'Payment of ${formatCurrency(_displayAmount)} recorded'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      Navigator.pop(context, _isFullPayment ? widget.remainingBalance : _displayAmount);
     }
   }
 }

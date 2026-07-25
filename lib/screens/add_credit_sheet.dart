@@ -16,6 +16,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   final _db = DatabaseHelper.instance;
   final _customerController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
 
   List<String> _customerSuggestions = [];
   List<String> _itemSuggestions = [];
@@ -50,6 +51,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   @override
   void dispose() {
     _customerController.dispose();
+    _scrollController.dispose();
     for (final item in _items) {
       item.nameController.dispose();
       item.priceController.dispose();
@@ -87,17 +89,29 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     final prices = validItems.map((i) => i.price).toList();
 
     final txnProvider = context.read<TransactionsProvider>();
-    final error = await txnProvider.addTransactionWithItemNames(customer.id!, itemNames, quantities, prices);
-
-    if (mounted) {
-      setState(() => _saving = false);
-      if (error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $error')));
-      } else {
+    try {
+      final txnId = await txnProvider.addTransactionWithItemNames(
+        customer.id!, itemNames, quantities, prices);
+      if (mounted) {
+        setState(() => _saving = false);
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Credit added successfully'), duration: Duration(seconds: 2)),
+          SnackBar(
+            content: const Text('Credit added'),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () {
+                txnProvider.deleteTransaction(txnId);
+              },
+            ),
+          ),
         );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
     }
   }
@@ -159,14 +173,24 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
             const SizedBox(height: 12),
             const Text('Items', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
             const SizedBox(height: 8),
-            ..._items.asMap().entries.map((entry) => _buildItemRow(entry.key)),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Add another item'),
-              onPressed: () {
-                setState(() => _items.add(_LineItem()));
-              },
+            Expanded(
+              child: Scrollbar(
+                controller: _scrollController,
+                child: ListView(
+                  controller: _scrollController,
+                  children: [
+                    ..._items.map((item) => _buildItemRow(item)),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add another item'),
+                      onPressed: () {
+                        setState(() => _items.insert(0, _LineItem()));
+                      },
+                    ),
+                  ],
+                ),
+              ),
             ),
             const Divider(),
             Row(
@@ -201,8 +225,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     );
   }
 
-  Widget _buildItemRow(int index) {
-    final item = _items[index];
+  Widget _buildItemRow(_LineItem item) {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -300,7 +323,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                     icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    onPressed: () => setState(() => _items.removeAt(index)),
+                    onPressed: () => setState(() => _items.remove(item)),
                   ),
               ],
             ),
