@@ -22,21 +22,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
     _PageData(
       icon: Icons.receipt_long,
-      title: 'Collections Dashboard',
+      title: 'Credit Book',
       body:
-          'See all active debts sorted by date, oldest first.\n\nEach tile shows the full item breakdown with prices. Red = overdue (14+ days), orange = 7+ days. Tap Pay to record a payment.',
+          'All active debts sorted oldest-first. Each tile shows the item breakdown (name, qty x price, subtotal).\n\nRed = overdue (14+ days), orange = 7+ days.\n\nSearch by name or toggle group mode to see one tile per customer.',
     ),
     _PageData(
       icon: Icons.add_circle_outline,
       title: 'Recording Credits',
       body:
-          'Tap the + button to record a credit.\n\nType the customer name and item \u2014 suggestions appear automatically. You can add multiple items for the same customer.',
+          'Tap + to record a credit. New items appear at the top. Autocomplete for customer and item names.\n\nEach credit gets its own receipt — separate dates stay separate.',
     ),
     _PageData(
       icon: Icons.settings,
-      title: 'Settings & Backup',
+      title: 'Payments & Undo',
       body:
-          'View settled debts, restore backups, and toggle dark/light mode from the Settings tab.',
+          'Tap Pay on any tile, enter the amount on the numpad. Partial payments supported.\n\nMistake? Tap Undo on the snackbar immediately after adding a credit or recording a payment.',
     ),
   ];
 
