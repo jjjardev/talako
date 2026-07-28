@@ -229,6 +229,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
   Widget _buildItemRow(_LineItem item) {
     return Card(
+      key: ValueKey(item.id),
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(8),
@@ -337,6 +338,8 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 }
 
 class _LineItem {
+  static int _nextId = 0;
+  final int id = _nextId++;
   String itemName = '';
   int quantity = 1;
   double price = 0;

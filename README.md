@@ -10,22 +10,26 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 
 ## Features
 
-**Collections Dashboard**
+**Credit Book**
 - All active debts sorted oldest-first, with full item breakdown (name, qty x unit price, subtotal)
 - Color-coded tiles: red = overdue (14+ days), orange = 7+ days, grey = recent
 - Overdue warning with total amount in the summary bar
-- Pay button on each tile opens a numpad payment sheet
+- Search by customer name
+- Toggle to group all receipts of the same customer into one aggregated tile
 
 **Credit Recording**
 - Tap + to add a new credit with multiple items
+- New items insert at the top; the whole form scrolls when keyboard is open
 - Autocomplete for customer names and item names
 - Quantity steppers and inline price entry
 - Total auto-calculated
+- Undo: SnackBar appears after saving — tap Undo to delete the transaction
 
 **Payment Management**
 - Numpad keypad for entering payment amounts
-- Defaults to full balance; supports partial payments
+- Supports partial payments
 - Receipt-based: payments apply to the whole transaction, not individual items
+- Undo: SnackBar appears after paying — tap Undo to reverse the payment
 
 **Backup & Restore**
 - JSON export — human-readable, shareable via Messenger/email
@@ -44,7 +48,7 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 1. **Install** — download `app-release.apk` and install on your Android phone
 2. **First launch** — a 4-page onboarding explains the app. Swipe through or tap Skip.
 3. **Add a credit** — tap the + FAB, type customer name and items, set quantity and price
-4. **Track debts** — the Collections dashboard shows all active debts with item breakdowns
+4. **Track debts** — the Credit Book shows all active debts with item breakdowns
 5. **Record payments** — tap the green Pay button on any tile, enter amount on the numpad
 6. **Back up regularly** — go to Settings, export a backup
 
@@ -81,11 +85,11 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 ```
 lib/
 ├── main.dart                      # App entry + theme + routing
-├── screens/main_shell.dart        # Bottom nav (Collections / Settings)
+├── screens/main_shell.dart        # Bottom nav (Credit Book / Settings)
 ├── database/database_helper.dart  # SQLite singleton
 ├── models/                        # Transaction, TransactionItem, Customer, Item
 ├── providers/                     # Transactions, Customers, Theme
-├── screens/                       # Collections, AddCreditSheet, PaySheet, Settings, SettledDebts, Onboarding
+├── screens/                       # CreditBook, AddCreditSheet, PaySheet, Settings, SettledDebts, Onboarding
 └── utils/                         # Currency and date formatters
 ```
 
