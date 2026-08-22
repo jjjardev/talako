@@ -5,6 +5,7 @@ import '../providers/customers_provider.dart';
 import '../providers/transactions_provider.dart';
 import '../utils/app_logger.dart';
 import '../utils/currency_format.dart';
+import '../utils/snackbars.dart';
 
 class AddCreditSheet extends StatefulWidget {
   const AddCreditSheet({super.key});
@@ -98,17 +99,15 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         setState(() => _saving = false);
         final messenger = ScaffoldMessenger.of(context);
         Navigator.pop(context);
-        messenger.showSnackBar(
-          SnackBar(
-            content: const Text('Credit added'),
-            duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: 'Undo',
-                onPressed: () {
-                  messenger.clearSnackBars();
-                  txnProvider.deleteTransaction(txnId);
-                },
-            ),
+        showAutoDismissSnackBar(
+          messenger,
+          message: 'Credit added',
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              messenger.clearSnackBars();
+              txnProvider.deleteTransaction(txnId);
+            },
           ),
         );
       }

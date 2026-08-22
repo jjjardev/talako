@@ -210,19 +210,23 @@ class _TransactionTile extends StatelessWidget {
 
     Color bgColor;
     Color textColor;
+    Color moneyColor;
     String daysLabel;
     final formattedDate = formatDate(t.date);
     if (txnDate.isBefore(cutoff14)) {
       bgColor = Colors.red.shade50;
       textColor = Colors.red.shade800;
+      moneyColor = Colors.red.shade900;
       daysLabel = '$daysAgo days ago - $formattedDate (Overdue!)';
     } else if (txnDate.isBefore(cutoff7)) {
       bgColor = Colors.orange.shade50;
       textColor = Colors.orange.shade800;
+      moneyColor = Colors.orange.shade900;
       daysLabel = '$daysAgo days ago - $formattedDate';
     } else {
       bgColor = Colors.grey.shade50;
       textColor = Colors.grey.shade800;
+      moneyColor = Colors.grey.shade900;
       daysLabel = daysAgo == 0 ? 'Today - $formattedDate' : '$daysAgo days ago - $formattedDate';
     }
 
@@ -285,10 +289,10 @@ class _TransactionTile extends StatelessWidget {
             Row(
               children: [
                 Text('Paid: ${formatCurrency(t.paidAmount)} of ${formatCurrency(t.totalAmount)}',
-                  style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: moneyColor)),
                 const Spacer(),
                 Text(formatCurrency(t.remaining),
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: moneyColor)),
                 const SizedBox(width: 8),
                 SizedBox(
                   height: 36,
@@ -327,15 +331,19 @@ class _GroupedTile extends StatelessWidget {
 
     Color bgColor;
     Color textColor;
+    Color moneyColor;
     if (oldestDate.isBefore(cutoff14)) {
       bgColor = Colors.red.shade50;
       textColor = Colors.red.shade800;
+      moneyColor = Colors.red.shade900;
     } else if (oldestDate.isBefore(cutoff7)) {
       bgColor = Colors.orange.shade50;
       textColor = Colors.orange.shade800;
+      moneyColor = Colors.orange.shade900;
     } else {
       bgColor = Colors.grey.shade50;
       textColor = Colors.grey.shade800;
+      moneyColor = Colors.grey.shade900;
     }
 
     return Card(
@@ -357,22 +365,22 @@ class _GroupedTile extends StatelessWidget {
                     ),
                   ),
                   Text('${g.transactionCount} receipts',
-                    style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: textColor.withValues(alpha: 0.85))),
                 ],
               ),
               const SizedBox(height: 6),
               Text('Oldest: ${formatDateShort(g.oldestDate)}',
-                style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.5))),
+                style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.8))),
               const Divider(height: 16),
               Row(
                 children: [
                   Text('Paid: ${formatCurrency(g.paidAmount)} of ${formatCurrency(g.totalAmount)}',
-                    style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: moneyColor)),
                   const Spacer(),
                   Text(formatCurrency(g.remaining),
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: moneyColor)),
                   const SizedBox(width: 8),
-                  Icon(Icons.chevron_right, color: textColor.withValues(alpha: 0.5)),
+                  Icon(Icons.chevron_right, color: moneyColor),
                 ],
               ),
             ],
