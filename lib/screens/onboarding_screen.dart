@@ -33,6 +33,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           'Tap + to record a credit. New items appear at the top. Autocomplete for customer and item names.\n\nEach credit gets its own receipt — separate dates stay separate.',
     ),
     _PageData(
+      icon: Icons.inventory_2_outlined,
+      title: 'Stock Watch',
+      body:
+          'Glance at your shelf and tap items to mark them Well Stocked, Running Low, Out of Stock or Cold.\n\nNo counting - a 30-second scan is enough.',
+    ),
+    _PageData(
+      icon: Icons.soup_kitchen_outlined,
+      title: 'Kitchen & Palengke',
+      body:
+          'Track ingredient freshness, define your dishes and see what you can serve today.\n\nThe Palengke List builds itself - share it before heading to the market.',
+    ),
+    _PageData(
       icon: Icons.settings,
       title: 'Payments & Undo',
       body:
@@ -50,7 +62,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('onboarding_version', 2);
+    await prefs.setInt('onboarding_version', 3);
     if (mounted) {
       Navigator.pushReplacement(
         context,

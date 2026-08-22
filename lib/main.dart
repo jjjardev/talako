@@ -12,7 +12,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   final isDark = prefs.getBool('theme_mode') ?? true;
-  const requiredVersion = 2;
+  const requiredVersion = 3;
   final storedVersion = prefs.getInt('onboarding_version') ?? 0;
   final showOnboarding = storedVersion < requiredVersion;
   runApp(
