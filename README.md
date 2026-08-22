@@ -2,6 +2,10 @@
 
 **Track debts. Accept payments. Never lose a notebook again.**
 
+Now with **Stock Watch, Kitchen Mode & Palengke List** — a 30-second shelf scan instead of inventory counting.
+
+**Track debts. Accept payments. Never lose a notebook again.**
+
 TalaKo is an **offline-first** Android app for small store owners who sell on credit. No internet needed. No account required.
 
 [Download Latest Release](https://github.com/jjjardev/talako/releases) • [Full Documentation](DOCUMENTATION.md)
@@ -35,6 +39,26 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 - JSON export — human-readable, shareable via Messenger/email
 - Raw .db export — exact binary copy
 - Import both formats with confirmation
+
+**Stock Watch (Shelf)**
+- Macro stock statuses: Well Stocked → Running Low → Out of Stock → Cold — tap to cycle
+- Auto badges from sales history: 🔥 Hot · 🌡️ Cooling · 🧊 Cold · 🏷️ New
+- Filter chips; long-press any item for notes, price and usage type (Retail / Ingredient / Both)
+
+**Kitchen Mode**
+- Ingredient freshness tracking: Fresh → Use Soon → Frozen → Empty/Spoiled
+- Define dishes once; the app derives 🟢 Available / 🟡 Limited / 🔴 Unavailable
+- Serving a dish demotes its fresh ingredients to Use Soon (opt-in)
+- Spoilage log with estimated value
+
+**Palengke List**
+- One shared list: dry goods + wet market needs, sorted by urgency
+- Check items off as bought (resets to Well Stocked / Fresh)
+- Share via SMS/Messenger so family can do the market run
+
+**Owner Tools**
+- "Owner Took Stock" quick log (never counts as sales or debt)
+- Personal Use Log + Monthly Store Report (sales, spoilage, top sellers)
 
 **Settings**
 - Dark/Light theme toggle (persisted)

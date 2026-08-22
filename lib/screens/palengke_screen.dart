@@ -1,0 +1,176 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../models/item.dart';
+import '../models/stock_enums.dart';
+import '../providers/inventory_provider.dart';
+
+class PalengkeScreen extends StatelessWidget {
+  const PalengkeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final inv = context.watch<InventoryProvider>();
+    final dry = inv.palengkeDryGoods;
+    final wet = inv.palengkeWetMarket;
+    final hotItems = inv.items
+        .where((i) => inv.badges[i.id]?.contains(ItemBadge.hot) ?? false)
+        .toList();
+
+    if (dry.isEmpty && wet.isEmpty && hotItems.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.shopping_basket_outlined, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 16),
+            Text(
+              'Nothing needed right now.\nMark items Low or Out on your Shelf scan\nand they will show up here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'palengke_share',
+        onPressed: () => _share(context, dry, wet, hotItems),
+        icon: const Icon(Icons.share),
+        label: const Text('Share List'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+        children: [
+          if (dry.isNotEmpty) ...[
+            _sectionHeader('Sari-Sari Needs (Dry Goods)', Icons.storefront),
+            for (final item in dry)
+              _RestockRow(item: item, statusLabel: item.stockStatus.label, statusColor: item.stockStatus.color),
+          ],
+          if (wet.isNotEmpty) ...[
+            _sectionHeader('Kitchen Needs (Wet Market)', Icons.soup_kitchen_outlined),
+            for (final item in wet)
+              _RestockRow(item: item, statusLabel: item.freshnessStatus.label, statusColor: item.freshnessStatus.color),
+          ],
+          if (hotItems.isNotEmpty) ...[
+            _sectionHeader('Suggestions', Icons.tips_and_updates_outlined),
+            for (final item in hotItems)
+              Card(
+                color: Colors.red.shade50,
+                child: ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.local_fire_department, color: Colors.red),
+                  title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Selling fast this week - consider buying extra.'),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.teal),
+          const SizedBox(width: 6),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        ],
+      ),
+    );
+  }
+
+  void _share(BuildContext context, List<Item> dry, List<Item> wet, List<Item> hot) {
+    final buffer = StringBuffer('PALENGKE LIST\n=============\n');
+    if (dry.isNotEmpty) {
+      buffer.writeln('\nDRY GOODS:');
+      for (final i in dry) {
+        buffer.writeln('- ${i.name} (${i.stockStatus.label})');
+      }
+    }
+    if (wet.isNotEmpty) {
+      buffer.writeln('\nWET MARKET:');
+      for (final i in wet) {
+        buffer.writeln('- ${i.name} (${i.freshnessStatus.label})');
+      }
+    }
+    if (hot.isNotEmpty) {
+      buffer.writeln('\nBUY EXTRA (selling fast):');
+      for (final i in hot) {
+        buffer.writeln('- ${i.name}');
+      }
+    }
+    Share.share(buffer.toString(), subject: 'TalaKo Palengke List');
+  }
+}
+
+class _RestockRow extends StatefulWidget {
+  final Item item;
+  final String statusLabel;
+  final Color statusColor;
+
+  const _RestockRow({
+    required this.item,
+    required this.statusLabel,
+    required this.statusColor,
+  });
+
+  @override
+  State<_RestockRow> createState() => _RestockRowState();
+}
+
+class _RestockRowState extends State<_RestockRow> {
+  bool _bought = false;
+
+  Future<void> _markBought(bool? value) async {
+    setState(() => _bought = value ?? false);
+    if (!_bought) return;
+    await context.read<InventoryProvider>().restock([widget.item.id!]);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${widget.item.name} marked as bought'),
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = widget.item.notes;
+    return CheckboxListTile(
+      value: _bought,
+      onChanged: _markBought,
+      controlAffinity: ListTileControlAffinity.leading,
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        widget.item.name,
+        style: TextStyle(
+          decoration: _bought ? TextDecoration.lineThrough : null,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.circle, size: 9, color: widget.statusColor),
+              const SizedBox(width: 4),
+              Text(widget.statusLabel,
+                  style: TextStyle(fontSize: 12, color: widget.statusColor, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          if (notes != null && notes.isNotEmpty)
+            Text(notes, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        ],
+      ),
+    );
+  }
+}

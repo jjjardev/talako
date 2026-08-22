@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'providers/customers_provider.dart';
+import 'providers/inventory_provider.dart';
 import 'providers/transactions_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/main_shell.dart';
@@ -20,6 +21,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider(isDark: isDark)),
         ChangeNotifierProvider(create: (_) => CustomersProvider()),
         ChangeNotifierProvider(create: (_) => TransactionsProvider()),
+        ChangeNotifierProvider(create: (_) => InventoryProvider()),
       ],
       child: TalaKoApp(showOnboarding: showOnboarding),
     ),

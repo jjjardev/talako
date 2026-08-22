@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
+import '../models/dish.dart';
 import '../utils/app_logger.dart';
 
 class TransactionItemLine {
@@ -200,6 +201,43 @@ class TransactionsProvider extends ChangeNotifier {
       });
     }
     final txnId = await _db.insertTransactionWithItems(customerId, items);
+    await loadActiveTransactions();
+    return txnId;
+  }
+
+  /// Records a credit that may include a dish sale. When [deductIngredients]
+  /// is true, the dish's `fresh` ingredients are demoted to `use_soon`.
+  Future<int> addDishTransaction(
+    int customerId,
+    List<String> itemNames,
+    List<int> quantities,
+    List<double> prices, {
+    Dish? dish,
+    bool deductIngredients = false,
+  }) async {
+    final items = <Map<String, dynamic>>[];
+    for (int i = 0; i < itemNames.length; i++) {
+      final subtotal = quantities[i] * prices[i];
+      items.add({
+        'item_name': itemNames[i],
+        'quantity': quantities[i],
+        'price': prices[i],
+        'subtotal': subtotal.toDouble(),
+      });
+    }
+    final txnId = await _db.insertTransactionWithItems(
+      customerId,
+      items,
+      dishId: dish?.id,
+    );
+    if (deductIngredients && dish?.id != null) {
+      try {
+        final ids = await _db.getDishIngredientIds(dish!.id!);
+        await _db.demoteFreshIngredients(ids);
+      } catch (e, s) {
+        logError('dish-deduct', e, s);
+      }
+    }
     await loadActiveTransactions();
     return txnId;
   }

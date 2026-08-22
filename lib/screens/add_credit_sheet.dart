@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
+import '../models/dish.dart';
 import '../providers/customers_provider.dart';
+import '../providers/inventory_provider.dart';
 import '../providers/transactions_provider.dart';
+import '../models/stock_enums.dart';
 import '../utils/app_logger.dart';
 import '../utils/currency_format.dart';
 import '../utils/snackbars.dart';
@@ -22,7 +25,9 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
   List<String> _customerSuggestions = [];
   List<String> _itemSuggestions = [];
+  Map<String, Dish> _dishesByName = {};
   final List<_LineItem> _items = [];
+  bool _deductIngredients = false;
   bool _saving = false;
 
   @override
@@ -35,11 +40,25 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   Future<void> _loadSuggestions() async {
     final customers = await _db.getAllCustomers();
     final itemNames = await _db.getAllItemNames();
+    final dishes = await _db.getAllDishes();
     if (!mounted) return;
     setState(() {
       _customerSuggestions = customers.map((c) => c.name).toList();
-      _itemSuggestions = itemNames;
+      _itemSuggestions = [...itemNames, ...dishes.map((d) => d.name)]
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      _dishesByName = {
+        for (final d in dishes) d.name.toLowerCase(): d,
+      };
     });
+  }
+
+  /// First line that matches a defined dish (case-insensitive).
+  Dish? get _matchedDish {
+    for (final line in _items) {
+      final dish = _dishesByName[line.itemName.trim().toLowerCase()];
+      if (dish != null && line.price > 0) return dish;
+    }
+    return null;
   }
 
   double get _total {
@@ -91,10 +110,17 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     final quantities = validItems.map((i) => i.quantity).toList();
     final prices = validItems.map((i) => i.price).toList();
 
+    final dish = _matchedDish;
     final txnProvider = context.read<TransactionsProvider>();
     try {
-      final txnId = await txnProvider.addTransactionWithItemNames(
-        customer.id!, itemNames, quantities, prices);
+      final txnId = await txnProvider.addDishTransaction(
+        customer.id!,
+        itemNames,
+        quantities,
+        prices,
+        dish: dish,
+        deductIngredients: _deductIngredients && dish != null,
+      );
       if (mounted) {
         setState(() => _saving = false);
         final messenger = ScaffoldMessenger.of(context);
@@ -110,6 +136,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
             },
           ),
         );
+        await _promptOutOfStockRestock(itemNames, messenger);
       }
     } catch (e, s) {
       logError('add-credit', e, s);
@@ -117,6 +144,40 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
+    }
+  }
+
+  /// Non-blocking nudge: selling something that was marked Out of Stock
+  /// means it is clearly back on the shelf.
+  Future<void> _promptOutOfStockRestock(
+    List<String> soldNames,
+    ScaffoldMessengerState messenger,
+  ) async {
+    try {
+      final inv = context.read<InventoryProvider>();
+      if (inv.items.isEmpty) return; // inventory never scanned - stay silent
+      final oos = inv.items
+          .where((i) =>
+              i.stockStatus == StockStatus.outOfStock &&
+              soldNames.any((s) => s.toLowerCase() == i.name.toLowerCase()))
+          .toList();
+      if (oos.isEmpty || oos.first.id == null) return;
+      final target = inv.itemById(oos.first.id!);
+      if (target == null) return;
+      messenger.showSnackBar(SnackBar(
+        duration: const Duration(seconds: 5),
+        content: Text('${target.name} was marked Out of Stock'),
+        action: SnackBarAction(
+          label: 'Back in stock',
+          onPressed: () async {
+            await context.read<InventoryProvider>().updateItem(
+                  target.copyWith(stockStatus: StockStatus.wellStocked),
+                );
+          },
+        ),
+      ));
+    } catch (e) {
+      logError('oos-nudge', e);
     }
   }
 
@@ -206,6 +267,19 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.teal),
                 ),
               ],
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 150),
+              child: _matchedDish != null
+                  ? SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text('Deduct "${_matchedDish!.name}" ingredients'),
+                      subtitle: const Text('Fresh ingredients move to Use Soon'),
+                      value: _deductIngredients,
+                      onChanged: (v) => setState(() => _deductIngredients = v),
+                    )
+                  : const SizedBox.shrink(),
             ),
             const SizedBox(height: 12),
             SizedBox(

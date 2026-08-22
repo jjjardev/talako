@@ -7,9 +7,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers/theme_provider.dart';
 import '../providers/customers_provider.dart';
+import '../providers/inventory_provider.dart';
 import '../providers/transactions_provider.dart';
 import '../database/database_helper.dart';
 import '../utils/app_logger.dart';
+import '../utils/currency_format.dart';
+import 'owner_use_sheet.dart';
+import 'personal_use_log_screen.dart';
 import 'settled_debts_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -32,6 +36,42 @@ class SettingsScreen extends StatelessWidget {
                   onChanged: (_) => themeProvider.toggleTheme(),
                 );
               },
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.takeout_dining_outlined),
+                  title: const Text('Owner Took Stock'),
+                  subtitle: const Text('Log personal consumption'),
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    builder: (_) => const OwnerUseSheet(),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.receipt_outlined),
+                  title: const Text('Personal Use Log'),
+                  subtitle: const Text('What you consumed yourself'),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const PersonalUseLogScreen())),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.assessment_outlined),
+                  title: const Text('Monthly Store Report'),
+                  subtitle: const Text('Sales, spoilage, top sellers'),
+                  onTap: () => _showMonthlyReport(context),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -85,6 +125,100 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _showMonthlyReport(BuildContext context) async {
+    final now = DateTime.now();
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: context.read<InventoryProvider>().monthlyReport(now),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return const SizedBox(
+                height: 200,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final r = snap.data!;
+            final topItems = (r['top_items'] as List)
+                .map((row) =>
+                    '${row['order_count']}x ${(row['norm_name'] as String)}')
+                .join('\n  ');
+            final text = '''
+${_monthName(now.month)} ${now.year} Store Report
+
+Sales recorded: ${formatCurrency(r['sales'] as double)}
+Collected: ${formatCurrency(r['collected'] as double)}
+Personal use: ${formatCurrency(r['owner_use'] as double)}
+Spoilage loss: ${formatCurrency(r['spoilage'] as double)}
+
+Top sellers:
+  $topItems''';
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('${_monthName(now.month)} ${now.year} Report',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  _reportRow('Sales recorded', formatCurrency(r['sales'] as double)),
+                  _reportRow('Collected', formatCurrency(r['collected'] as double)),
+                  _reportRow('Personal use', formatCurrency(r['owner_use'] as double)),
+                  _reportRow('Spoilage loss', formatCurrency(r['spoilage'] as double)),
+                  const Divider(height: 24),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Top sellers',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      topItems.isEmpty ? 'No sales recorded this month yet.' : '  $topItems',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Share report'),
+                    onPressed: () => Share.share(text, subject: 'TalaKo Monthly Report'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _reportRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  String _monthName(int m) => const [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ][m - 1];
 
   Future<void> _exportJsonBackup(BuildContext context) async {
     try {
