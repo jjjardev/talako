@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
 import '../providers/customers_provider.dart';
 import '../providers/transactions_provider.dart';
+import '../utils/app_logger.dart';
 import '../utils/currency_format.dart';
 
 class AddCreditSheet extends StatefulWidget {
@@ -20,7 +21,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
   List<String> _customerSuggestions = [];
   List<String> _itemSuggestions = [];
-  List<_LineItem> _items = [];
+  final List<_LineItem> _items = [];
   bool _saving = false;
 
   @override
@@ -76,11 +77,12 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
     final provider = context.read<CustomersProvider>();
     final customer = await provider.getOrCreateCustomer(_customerController.text.trim());
+    if (!mounted) {
+      return;
+    }
     if (customer == null || customer.id == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to create customer')));
-        setState(() => _saving = false);
-      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to create customer')));
+      setState(() => _saving = false);
       return;
     }
 
@@ -110,7 +112,8 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, s) {
+      logError('add-credit', e, s);
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));

@@ -5,6 +5,7 @@ import '../models/customer.dart';
 import '../models/customer_summary.dart';
 import '../models/transaction.dart' as txn_model;
 import '../models/transaction_item.dart';
+import '../utils/app_logger.dart';
 
 class CustomersProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
@@ -40,7 +41,8 @@ class CustomersProvider extends ChangeNotifier {
 
       _summaries = summaries;
       _allCustomers = allCustomers;
-    } catch (_) {
+    } catch (e, s) {
+      logError('load-customers', e, s);
       _summaries = [];
       _allCustomers = [];
     }
@@ -50,7 +52,8 @@ class CustomersProvider extends ChangeNotifier {
   Future<void> loadAllCustomers() async {
     try {
       _allCustomers = await _db.getAllCustomers(search: _search);
-    } catch (_) {
+    } catch (e, s) {
+      logError('load-all-customers', e, s);
       _allCustomers = [];
     }
     notifyListeners();

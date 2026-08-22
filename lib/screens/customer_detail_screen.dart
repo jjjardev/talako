@@ -1,0 +1,213 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/transactions_provider.dart';
+import '../utils/currency_format.dart';
+import '../utils/date_format.dart';
+import '../utils/pay_flow.dart';
+
+class CustomerDetailScreen extends StatefulWidget {
+  final int customerId;
+  final String customerName;
+
+  const CustomerDetailScreen({
+    super.key,
+    required this.customerId,
+    required this.customerName,
+  });
+
+  @override
+  State<CustomerDetailScreen> createState() => _CustomerDetailScreenState();
+}
+
+class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
+  List<ActiveTransaction> _transactions = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final txns = await context.read<TransactionsProvider>()
+        .fetchCustomerTransactions(widget.customerId);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _transactions = txns;
+      _loading = false;
+    });
+  }
+
+  double get _totalOutstanding {
+    double sum = 0;
+    for (final t in _transactions) {
+      sum += t.remaining;
+    }
+    return sum;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.customerName), centerTitle: true),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _transactions.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.check_circle_outline, size: 64, color: Colors.green),
+                      const SizedBox(height: 16),
+                      Text('${widget.customerName} has no active debts',
+                          style: const TextStyle(fontSize: 18, color: Colors.grey)),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: 80, left: 8, right: 8, top: 8),
+                    children: [
+                      Card(
+                        color: Colors.teal.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Total Outstanding', style: TextStyle(fontSize: 16)),
+                              Text(
+                                formatCurrency(_totalOutstanding),
+                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      for (final t in _transactions)
+                        _ReceiptTile(t: t, onChanged: _load),
+                    ],
+                  ),
+                ),
+    );
+  }
+}
+
+class _ReceiptTile extends StatelessWidget {
+  final ActiveTransaction t;
+  final VoidCallback onChanged;
+
+  const _ReceiptTile({required this.t, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final txnDate = DateTime.parse(t.date);
+    final daysAgo = DateTime.now().difference(txnDate).inDays;
+    final cutoff14 = DateTime.now().subtract(const Duration(days: 14));
+    final cutoff7 = DateTime.now().subtract(const Duration(days: 7));
+
+    Color bgColor;
+    Color textColor;
+    String daysLabel;
+    final formattedDate = formatDate(t.date);
+    if (txnDate.isBefore(cutoff14)) {
+      bgColor = Colors.red.shade50;
+      textColor = Colors.red.shade800;
+      daysLabel = '$daysAgo days ago - $formattedDate (Overdue!)';
+    } else if (txnDate.isBefore(cutoff7)) {
+      bgColor = Colors.orange.shade50;
+      textColor = Colors.orange.shade800;
+      daysLabel = '$daysAgo days ago - $formattedDate';
+    } else {
+      bgColor = Colors.grey.shade50;
+      textColor = Colors.grey.shade800;
+      daysLabel = daysAgo == 0 ? 'Today - $formattedDate' : '$daysAgo days ago - $formattedDate';
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      color: bgColor,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(daysLabel,
+                    style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(3),
+                1: FlexColumnWidth(2),
+                2: FlexColumnWidth(2),
+              },
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              children: [
+                for (final item in t.items)
+                  TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(item.itemName,
+                          style: TextStyle(fontSize: 13, color: textColor)),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text('${item.quantity} x ${formatCurrency(item.price)}',
+                          style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7)),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(formatCurrency(item.subtotal),
+                          style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const Divider(height: 16),
+            Row(
+              children: [
+                Text('Paid: ${formatCurrency(t.paidAmount)} of ${formatCurrency(t.totalAmount)}',
+                  style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
+                const Spacer(),
+                Text(formatCurrency(t.remaining),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 36,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.payments, size: 18),
+                    label: const Text('Pay', style: TextStyle(fontSize: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                    ),
+                    onPressed: () => openPayFlow(context, t, onAfter: onChanged),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

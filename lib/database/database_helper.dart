@@ -4,6 +4,8 @@ import '../models/item.dart';
 import '../models/customer.dart';
 import '../models/transaction.dart';
 import '../models/transaction_item.dart';
+import '../utils/app_logger.dart';
+import '../utils/money.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -14,9 +16,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    if (_initFuture == null) {
-      _initFuture = _initDB('talako.db').then((db) => _database = db);
-    }
+    _initFuture ??= _initDB('talako.db').then((db) => _database = db);
     await _initFuture;
     return _database!;
   }
@@ -127,6 +127,15 @@ class DatabaseHelper {
       await _database!.close();
       _database = null;
       _initFuture = null;
+    }
+  }
+
+  Future<void> checkpoint() async {
+    try {
+      final db = await database;
+      await db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, s) {
+      logError('db-checkpoint', e, s);
     }
   }
 
@@ -330,7 +339,7 @@ class DatabaseHelper {
     if (txn.isEmpty) return 0;
     final total = (txn.first['total_amount'] as num).toDouble();
     final currentPaid = (txn.first['paid_amount'] as num).toDouble();
-    final updatedPaid = currentPaid + newPaidAmount;
+    final updatedPaid = clampMoney(currentPaid + newPaidAmount, 0, double.infinity);
     final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
     return await db.update(
       'transactions',
@@ -352,21 +361,32 @@ class DatabaseHelper {
     ''', [cutoff]);
   }
 
-  Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer() async {
+  Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer({int? customerId}) async {
     final db = await database;
+    String where = 'WHERE t.paid_amount < t.total_amount';
+    final args = <dynamic>[];
+    if (customerId != null) {
+      where += ' AND t.customer_id = ?';
+      args.add(customerId);
+    }
     return await db.rawQuery('''
-      SELECT t.*, c.name as customer_name,
-        COALESCE(GROUP_CONCAT(ti.item_name), '') as item_names,
-        COALESCE(GROUP_CONCAT(ti.quantity), '') as item_qtys,
-        COALESCE(GROUP_CONCAT(ti.price), '') as item_prices,
-        COALESCE(GROUP_CONCAT(ti.subtotal), '') as item_subtotals
+      SELECT t.*, c.name as customer_name
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
-      LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
-      WHERE t.paid_amount < t.total_amount
-      GROUP BY t.id
+      $where
       ORDER BY t.date ASC
-    ''');
+    ''', args);
+  }
+
+  Future<List<TransactionItem>> getItemsForTransactions(List<int> transactionIds) async {
+    if (transactionIds.isEmpty) return [];
+    final db = await database;
+    final placeholders = List.filled(transactionIds.length, '?').join(',');
+    final result = await db.rawQuery(
+      'SELECT * FROM transaction_items WHERE transaction_id IN ($placeholders) ORDER BY id ASC',
+      transactionIds,
+    );
+    return result.map((map) => TransactionItem.fromMap(map)).toList();
   }
 
   Future<int> deleteTransaction(int transactionId) async {
@@ -381,8 +401,8 @@ class DatabaseHelper {
     if (txn.isEmpty) return 0;
     final total = (txn.first['total_amount'] as num).toDouble();
     final currentPaid = (txn.first['paid_amount'] as num).toDouble();
-    final updatedPaid = (currentPaid - amount).clamp(0, total);
-    final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
+    final updatedPaid = clampMoney(currentPaid - amount, 0, total);
+    final status = moneyEquals(updatedPaid, total) || updatedPaid >= total ? 'PAID' : 'ACTIVE';
     return await db.update(
       'transactions',
       {'paid_amount': updatedPaid, 'status': status},
@@ -394,7 +414,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getGroupedActiveTransactions() async {
     final db = await database;
     return await db.rawQuery('''
-      SELECT c.name as customer_name,
+      SELECT c.id as customer_id, c.name as customer_name,
         SUM(t.total_amount) as total_amount,
         SUM(t.paid_amount) as paid_amount,
         COUNT(t.id) as transaction_count,
@@ -422,6 +442,7 @@ class DatabaseHelper {
     for (final item in items) {
       totalAmount += (item['subtotal'] as num).toDouble();
     }
+    totalAmount = roundMoney(totalAmount);
     return await db.transaction<int>((txn) async {
       final txnId = await txn.insert('transactions', {
         'customer_id': customerId,
@@ -436,7 +457,7 @@ class DatabaseHelper {
           'item_name': item['item_name'],
           'quantity': item['quantity'],
           'price': item['price'],
-          'subtotal': item['subtotal'],
+          'subtotal': roundMoney((item['subtotal'] as num).toDouble()),
         });
       }
       return txnId;

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
+import '../utils/money.dart';
 
 class PaySheet extends StatefulWidget {
   final int transactionId;
@@ -32,7 +33,7 @@ class _PaySheetState extends State<PaySheet> {
 
   bool get _isValid => _displayAmount > 0 && _displayAmount <= widget.remainingBalance;
 
-  bool get _isFullPayment => (_displayAmount - widget.remainingBalance).abs() < 0.01;
+  bool get _isFullPayment => isFullPayment(_displayAmount, widget.remainingBalance);
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +83,7 @@ class _PaySheetState extends State<PaySheet> {
                   if (_input.isNotEmpty && _isValid) ...[
                     const SizedBox(height: 4),
                     Text(
-                      '${_isFullPayment ? "Fully paid" : "Remaining: ${formatCurrency(_newRemaining)}"}',
+                      _isFullPayment ? 'Fully paid' : 'Remaining: ${formatCurrency(_newRemaining)}',
                       style: TextStyle(fontSize: 14, color: _isFullPayment ? Colors.green : Colors.orange),
                     ),
                   ],

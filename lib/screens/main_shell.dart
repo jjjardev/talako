@@ -48,6 +48,7 @@ class _MainShellState extends State<MainShell> {
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
               onPressed: () {
+                final provider = context.read<TransactionsProvider>();
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
@@ -57,7 +58,7 @@ class _MainShellState extends State<MainShell> {
                   ),
                   builder: (_) => const AddCreditSheet(),
                 ).then((_) {
-                  context.read<TransactionsProvider>().loadActiveTransactions();
+                  provider.loadActiveTransactions();
                 });
               },
               child: const Icon(Icons.add),

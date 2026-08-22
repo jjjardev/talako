@@ -9,6 +9,7 @@ import '../providers/theme_provider.dart';
 import '../providers/customers_provider.dart';
 import '../providers/transactions_provider.dart';
 import '../database/database_helper.dart';
+import '../utils/app_logger.dart';
 import 'settled_debts_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -102,7 +103,8 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         await Share.shareXFiles([XFile(file.path)], subject: 'TalaKo Backup');
       }
-    } catch (e) {
+    } catch (e, s) {
+      logError("settings", e, s);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
@@ -111,7 +113,7 @@ class SettingsScreen extends StatelessWidget {
 
   Future<void> _importJsonBackup(BuildContext context) async {
     final result = await FilePicker.platform.pickFiles(type: FileType.any);
-    if (result == null || result.files.isEmpty) return;
+    if (result == null || result.files.isEmpty || !context.mounted) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -149,7 +151,8 @@ class SettingsScreen extends StatelessWidget {
         context.read<TransactionsProvider>().loadActiveTransactions();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored successfully')));
       }
-    } catch (e) {
+    } catch (e, s) {
+      logError("settings", e, s);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
@@ -168,6 +171,8 @@ class SettingsScreen extends StatelessWidget {
         return;
       }
 
+      await dbHelper.checkpoint();
+
       final dir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final destPath = '${dir.path}/talako_backup_$timestamp.db';
@@ -176,7 +181,8 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         await Share.shareXFiles([XFile(destPath)], subject: 'TalaKo Database Backup');
       }
-    } catch (e) {
+    } catch (e, s) {
+      logError("settings", e, s);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
       }
@@ -188,7 +194,7 @@ class SettingsScreen extends StatelessWidget {
       type: FileType.custom,
       allowedExtensions: ['db'],
     );
-    if (result == null || result.files.isEmpty) return;
+    if (result == null || result.files.isEmpty || !context.mounted) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -219,7 +225,8 @@ class SettingsScreen extends StatelessWidget {
         context.read<TransactionsProvider>().loadActiveTransactions();
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database restored successfully')));
       }
-    } catch (e) {
+    } catch (e, s) {
+      logError("settings", e, s);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/item.dart';
+import '../utils/app_logger.dart';
 
 class ItemsProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
@@ -17,7 +18,8 @@ class ItemsProvider extends ChangeNotifier {
   Future<void> loadItems() async {
     try {
       _items = await _db.getAllItems(search: _search, newestFirst: _newestFirst);
-    } catch (_) {
+    } catch (e, s) {
+      logError('load-items', e, s);
       _items = [];
     }
     notifyListeners();

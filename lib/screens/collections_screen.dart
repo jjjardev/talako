@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
 import '../utils/date_format.dart';
-import 'pay_sheet.dart';
+import '../utils/pay_flow.dart';
+import 'customer_detail_screen.dart';
 
 class CollectionsScreen extends StatefulWidget {
   const CollectionsScreen({super.key});
@@ -94,7 +95,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                   itemBuilder: (context, index) {
                     if (provider.isGrouped) {
                       final g = _filteredGrouped(provider)[index];
-                      return _GroupedTile(g: g);
+                      return _GroupedTile(g: g, onOpen: () => _openCustomerDetail(context, g));
                     } else {
                       final t = _filteredIndividual(provider)[index];
                       return _TransactionTile(t: t);
@@ -119,6 +120,18 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
     if (_searchQuery.isEmpty) return provider.groupedCustomers;
     return provider.groupedCustomers.where((g) =>
       g.customerName.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+  }
+
+  void _openCustomerDetail(BuildContext context, GroupedCustomer g) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CustomerDetailScreen(customerId: g.customerId, customerName: g.customerName),
+      ),
+    );
+    if (context.mounted) {
+      context.read<TransactionsProvider>().loadActiveTransactions();
+    }
   }
 
   Widget _buildSummaryBar(TransactionsProvider provider) {
@@ -288,7 +301,7 @@ class _TransactionTile extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                     ),
-                    onPressed: () => _openPay(context),
+                    onPressed: () => openPayFlow(context, t),
                   ),
                 ),
               ],
@@ -298,49 +311,13 @@ class _TransactionTile extends StatelessWidget {
       ),
     );
   }
-
-  void _openPay(BuildContext context) async {
-    final amount = await showModalBottomSheet<double>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => PaySheet(
-        transactionId: t.id,
-        customerName: t.customerName,
-        remainingBalance: t.remaining,
-      ),
-    );
-    if (amount != null && context.mounted) {
-      final isFull = (amount - t.remaining).abs() < 0.01;
-      final messenger = ScaffoldMessenger.of(context);
-      final provider = context.read<TransactionsProvider>();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(isFull ? 'Payment complete!' : 'Payment of ${formatCurrency(amount)} recorded'),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () {
-              messenger.clearSnackBars();
-              provider.reversePayment(t.id, amount);
-            },
-          ),
-        ),
-      );
-    }
-    if (context.mounted) {
-      context.read<TransactionsProvider>().loadActiveTransactions();
-    }
-  }
 }
 
 class _GroupedTile extends StatelessWidget {
   final GroupedCustomer g;
+  final VoidCallback onOpen;
 
-  const _GroupedTile({required this.g});
+  const _GroupedTile({required this.g, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -364,37 +341,42 @@ class _GroupedTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       color: bgColor,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    g.customerName,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      g.customerName,
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                    ),
                   ),
-                ),
-                Text('${g.transactionCount} receipts',
-                  style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text('Oldest: ${formatDateShort(g.oldestDate)}',
-              style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.5))),
-            const Divider(height: 16),
-            Row(
-              children: [
-                Text('Paid: ${formatCurrency(g.paidAmount)} of ${formatCurrency(g.totalAmount)}',
-                  style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
-                const Spacer(),
-                Text(formatCurrency(g.remaining),
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
-              ],
-            ),
-          ],
+                  Text('${g.transactionCount} receipts',
+                    style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text('Oldest: ${formatDateShort(g.oldestDate)}',
+                style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.5))),
+              const Divider(height: 16),
+              Row(
+                children: [
+                  Text('Paid: ${formatCurrency(g.paidAmount)} of ${formatCurrency(g.totalAmount)}',
+                    style: TextStyle(fontSize: 13, color: textColor.withValues(alpha: 0.7))),
+                  const Spacer(),
+                  Text(formatCurrency(g.remaining),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+                  const SizedBox(width: 8),
+                  Icon(Icons.chevron_right, color: textColor.withValues(alpha: 0.5)),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
