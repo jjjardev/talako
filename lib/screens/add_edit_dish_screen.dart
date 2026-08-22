@@ -155,10 +155,10 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                 );
               },
               onSelected: (selected) {
-                final match = inv.items.firstWhere(
-                  (i) => i.name.toLowerCase() == selected.toLowerCase(),
-                );
-                setState(() => _ingredientIds.add(match.id!));
+                final matches = inv.items
+                    .where((i) => i.name.toLowerCase() == selected.toLowerCase());
+                if (matches.isEmpty || matches.first.id == null) return;
+                setState(() => _ingredientIds.add(matches.first.id!));
               },
             ),
             const SizedBox(height: 8),

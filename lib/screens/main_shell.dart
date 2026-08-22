@@ -82,8 +82,15 @@ class _MainShellState extends State<MainShell> {
     }
     if (_currentIndex == 1) {
       return FloatingActionButton.small(
-        onPressed: () =>
-            showModalBottomSheet(context: context, builder: (_) => const AddItemSheet()),
+        onPressed: () => showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (_) => const AddItemSheet(),
+        ),
         child: const Icon(Icons.add),
       );
     }

@@ -26,9 +26,9 @@ class _StockHomeScreenState extends State<StockHomeScreen> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: SegmentedButton<_Segment>(
               segments: const [
-                ButtonSegment(value: _Segment.shelf, label: Text('Shelf'), icon: Icon(Icons.storefront, size: 18)),
-                ButtonSegment(value: _Segment.kitchen, label: Text('Kitchen'), icon: Icon(Icons.soup_kitchen_outlined, size: 18)),
-                ButtonSegment(value: _Segment.palengke, label: Text('Palengke'), icon: Icon(Icons.shopping_basket_outlined, size: 18)),
+                ButtonSegment(value: _Segment.shelf, label: Text('Shelf')),
+                ButtonSegment(value: _Segment.kitchen, label: Text('Kitchen')),
+                ButtonSegment(value: _Segment.palengke, label: Text('Palengke')),
               ],
               selected: {_segment},
               onSelectionChanged: (s) => setState(() => _segment = s.first),

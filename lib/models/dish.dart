@@ -63,8 +63,11 @@ class DishWithIngredients {
 
   DishWithIngredients({required this.dish, this.ingredients = const []});
 
-  DishAvailability get availability =>
-      deriveDishAvailability(ingredients.map((i) => i.freshness).toList());
+  /// A dish with no defined ingredients is incomplete, never "available".
+  DishAvailability get availability {
+    if (ingredients.isEmpty) return DishAvailability.unavailable;
+    return deriveDishAvailability(ingredients.map((i) => i.freshness).toList());
+  }
 
   int get usedInCount => 0; // placeholder for future weekly counts
 }

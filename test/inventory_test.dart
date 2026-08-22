@@ -202,6 +202,13 @@ void main() {
             FreshnessStatus.emptySpoiled,
           ]),
           DishAvailability.unavailable);
+
+      // A dish stripped of every ingredient (cascade deletes) is incomplete.
+      expect(
+        DishWithIngredients(dish: Dish(name: 'Empty Dish', price: 1)).availability,
+        DishAvailability.unavailable,
+        reason: 'empty-ingredient dishes must not show as Available',
+      );
     });
   });
 

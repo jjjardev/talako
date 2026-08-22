@@ -135,90 +135,9 @@ class SettingsScreen extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => SafeArea(
-        child: FutureBuilder<Map<String, dynamic>>(
-          future: context.read<InventoryProvider>().monthlyReport(now),
-          builder: (context, snap) {
-            if (!snap.hasData) {
-              return const SizedBox(
-                height: 200,
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            final r = snap.data!;
-            final topItems = (r['top_items'] as List)
-                .map((row) =>
-                    '${row['order_count']}x ${(row['norm_name'] as String)}')
-                .join('\n  ');
-            final text = '''
-${_monthName(now.month)} ${now.year} Store Report
-
-Sales recorded: ${formatCurrency(r['sales'] as double)}
-Collected: ${formatCurrency(r['collected'] as double)}
-Personal use: ${formatCurrency(r['owner_use'] as double)}
-Spoilage loss: ${formatCurrency(r['spoilage'] as double)}
-
-Top sellers:
-  $topItems''';
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('${_monthName(now.month)} ${now.year} Report',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _reportRow('Sales recorded', formatCurrency(r['sales'] as double)),
-                  _reportRow('Collected', formatCurrency(r['collected'] as double)),
-                  _reportRow('Personal use', formatCurrency(r['owner_use'] as double)),
-                  _reportRow('Spoilage loss', formatCurrency(r['spoilage'] as double)),
-                  const Divider(height: 24),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Top sellers',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      topItems.isEmpty ? 'No sales recorded this month yet.' : '  $topItems',
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.share, size: 18),
-                    label: const Text('Share report'),
-                    onPressed: () => Share.share(text, subject: 'TalaKo Monthly Report'),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
+      builder: (_) => _MonthlyReportSheet(month: now),
     );
   }
-
-  Widget _reportRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  String _monthName(int m) => const [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ][m - 1];
 
   Future<void> _exportJsonBackup(BuildContext context) async {
     try {
@@ -365,5 +284,102 @@ Top sellers:
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
     }
+  }
+}
+class _MonthlyReportSheet extends StatefulWidget {
+  final DateTime month;
+
+  const _MonthlyReportSheet({required this.month});
+
+  @override
+  State<_MonthlyReportSheet> createState() => _MonthlyReportSheetState();
+}
+
+class _MonthlyReportSheetState extends State<_MonthlyReportSheet> {
+  late final Future<Map<String, dynamic>> _report =
+      context.read<InventoryProvider>().monthlyReport(widget.month);
+
+  String _monthName(int m) => const [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ][m - 1];
+
+  Widget _reportRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: _report,
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final r = snap.data!;
+          final topItems = (r['top_items'] as List)
+              .map((row) => '${row['order_count']}x ${(row['norm_name'] as String)}')
+              .join('\n  ');
+          return Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('${_monthName(widget.month.month)} ${widget.month.year} Report',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                _reportRow('Sales recorded', formatCurrency(r['sales'] as double)),
+                _reportRow('Collected', formatCurrency(r['collected'] as double)),
+                _reportRow('Personal use', formatCurrency(r['owner_use'] as double)),
+                _reportRow('Spoilage loss', formatCurrency(r['spoilage'] as double)),
+                const Divider(height: 24),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child:
+                      Text('Top sellers', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    topItems.isEmpty ? 'No sales recorded this month yet.' : '  $topItems',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Share report'),
+                  onPressed: () => Share.share('''
+${_monthName(widget.month.month)} ${widget.month.year} Store Report
+
+Sales recorded: ${formatCurrency(r['sales'] as double)}
+Collected: ${formatCurrency(r['collected'] as double)}
+Personal use: ${formatCurrency(r['owner_use'] as double)}
+Spoilage loss: ${formatCurrency(r['spoilage'] as double)}
+
+Top sellers:
+  $topItems''', subject: 'TalaKo Monthly Report'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }

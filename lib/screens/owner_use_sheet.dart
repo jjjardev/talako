@@ -54,9 +54,11 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
           const SnackBar(content: Text('Failed to record - try again')));
       return;
     }
+    // Capture before popping - a dismissed sheet's context is unusable.
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
     showAutoDismissSnackBar(
-      ScaffoldMessenger.of(context),
+      messenger,
       message: 'Personal use recorded (${formatCurrency(value)})',
     );
   }

@@ -123,7 +123,10 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
       );
       if (mounted) {
         setState(() => _saving = false);
+        // Capture everything needed before popping - after Navigator.pop
+        // this sheet's BuildContext is deactivated and unusable.
         final messenger = ScaffoldMessenger.of(context);
+        final inv = context.read<InventoryProvider>();
         Navigator.pop(context);
         showAutoDismissSnackBar(
           messenger,
@@ -136,7 +139,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
             },
           ),
         );
-        await _promptOutOfStockRestock(itemNames, messenger);
+        await _promptOutOfStockRestock(inv, itemNames, messenger);
       }
     } catch (e, s) {
       logError('add-credit', e, s);
@@ -148,13 +151,14 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   }
 
   /// Non-blocking nudge: selling something that was marked Out of Stock
-  /// means it is clearly back on the shelf.
+  /// means it is clearly back on the shelf. Uses only objects captured
+  /// before the sheet was dismissed - never a BuildContext.
   Future<void> _promptOutOfStockRestock(
+    InventoryProvider inv,
     List<String> soldNames,
     ScaffoldMessengerState messenger,
   ) async {
     try {
-      final inv = context.read<InventoryProvider>();
       if (inv.items.isEmpty) return; // inventory never scanned - stay silent
       final oos = inv.items
           .where((i) =>
@@ -170,9 +174,9 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         action: SnackBarAction(
           label: 'Back in stock',
           onPressed: () async {
-            await context.read<InventoryProvider>().updateItem(
-                  target.copyWith(stockStatus: StockStatus.wellStocked),
-                );
+            await inv.updateItem(
+              target.copyWith(stockStatus: StockStatus.wellStocked),
+            );
           },
         ),
       ));
