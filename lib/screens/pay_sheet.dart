@@ -62,15 +62,20 @@ class _PaySheetState extends State<PaySheet> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  const Text('Remaining Balance', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text('Remaining Balance',
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade800)),
                   const SizedBox(height: 4),
                   Text(
                     formatCurrency(widget.remainingBalance),
-                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.teal),
+                    style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.teal.shade800),
                   ),
                   const SizedBox(height: 12),
                   const Divider(),
-                  const Text('Payment Amount', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text('Payment Amount',
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade800)),
                   const SizedBox(height: 4),
                   Text(
                     _input.isEmpty ? '₱ 0.00' : formatCurrency(_displayAmount),

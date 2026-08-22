@@ -80,10 +80,15 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Total Outstanding', style: TextStyle(fontSize: 16)),
+                              Text('Total Outstanding',
+                                  style: TextStyle(
+                                      fontSize: 16, color: Colors.grey.shade800)),
                               Text(
                                 formatCurrency(_totalOutstanding),
-                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.teal.shade900),
                               ),
                             ],
                           ),

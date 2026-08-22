@@ -55,8 +55,12 @@ class PalengkeScreen extends StatelessWidget {
                 child: ListTile(
                   dense: true,
                   leading: const Icon(Icons.local_fire_department, color: Colors.red),
-                  title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Selling fast this week - consider buying extra.'),
+                  title: Text(item.name,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600, color: Colors.red.shade900)),
+                  subtitle: Text('Selling fast this week - consider buying extra.',
+                      style:
+                          TextStyle(fontSize: 13, color: Colors.grey.shade700)),
                 ),
               ),
           ],

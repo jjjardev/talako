@@ -59,11 +59,14 @@ class _PersonalUseLogScreenState extends State<PersonalUseLogScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Consumed this month',
-                            style: TextStyle(fontSize: 15)),
+                        Text('Consumed this month',
+                            style: TextStyle(
+                                fontSize: 15, color: Colors.grey.shade800)),
                         Text(formatCurrency(_totalThisMonth),
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold)),
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade900)),
                       ],
                     ),
                   ),

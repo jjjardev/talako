@@ -282,7 +282,7 @@ class _TodayStrip extends StatelessWidget {
     final plates = (today?['plates'] ?? 0).toInt();
     final passed = profit >= goal && goal > 0;
     final progress = goal > 0 ? (profit / goal).clamp(0.0, 1.0) : 0.0;
-    final accent = passed ? Colors.green : Colors.teal;
+    final accent = passed ? Colors.green.shade800 : Colors.teal.shade800;
 
     return Card(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
