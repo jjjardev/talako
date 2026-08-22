@@ -34,17 +34,9 @@ class PalengkeScreen extends StatelessWidget {
       );
     }
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'palengke_share',
-        onPressed: () => _share(context, dry, wet, hotItems),
-        icon: const Icon(Icons.share),
-        label: const Text('Share List'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
-        children: [
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      children: [
           if (dry.isNotEmpty) ...[
             _sectionHeader('Sari-Sari Needs (Dry Goods)', Icons.storefront),
             for (final item in dry)
@@ -68,8 +60,19 @@ class PalengkeScreen extends StatelessWidget {
                 ),
               ),
           ],
+        if (dry.isNotEmpty || wet.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Center(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+              icon: const Icon(Icons.share, size: 18),
+              label: const Text('Share List'),
+              onPressed: () => sharePalengkeList(inv),
+            ),
+          ),
+          const SizedBox(height: 8),
         ],
-      ),
+      ],
     );
   }
 
@@ -85,29 +88,35 @@ class PalengkeScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _share(BuildContext context, List<Item> dry, List<Item> wet, List<Item> hot) {
-    final buffer = StringBuffer('PALENGKE LIST\n=============\n');
-    if (dry.isNotEmpty) {
-      buffer.writeln('\nDRY GOODS:');
-      for (final i in dry) {
-        buffer.writeln('- ${i.name} (${i.stockStatus.label})');
-      }
+/// Shared with StockHomeScreen's AppBar so it is reachable from any state.
+void sharePalengkeList(InventoryProvider inv) {
+  final dry = inv.palengkeDryGoods;
+  final wet = inv.palengkeWetMarket;
+  final hot = inv.items
+      .where((i) => inv.badges[i.id]?.contains(ItemBadge.hot) ?? false)
+      .toList();
+  final buffer = StringBuffer('PALENGKE LIST\n=============\n');
+  if (dry.isNotEmpty) {
+    buffer.writeln('\nDRY GOODS:');
+    for (final i in dry) {
+      buffer.writeln('- ${i.name} (${i.stockStatus.label})');
     }
-    if (wet.isNotEmpty) {
-      buffer.writeln('\nWET MARKET:');
-      for (final i in wet) {
-        buffer.writeln('- ${i.name} (${i.freshnessStatus.label})');
-      }
-    }
-    if (hot.isNotEmpty) {
-      buffer.writeln('\nBUY EXTRA (selling fast):');
-      for (final i in hot) {
-        buffer.writeln('- ${i.name}');
-      }
-    }
-    Share.share(buffer.toString(), subject: 'TalaKo Palengke List');
   }
+  if (wet.isNotEmpty) {
+    buffer.writeln('\nWET MARKET:');
+    for (final i in wet) {
+      buffer.writeln('- ${i.name} (${i.freshnessStatus.label})');
+    }
+  }
+  if (hot.isNotEmpty) {
+    buffer.writeln('\nBUY EXTRA (selling fast):');
+    for (final i in hot) {
+      buffer.writeln('- ${i.name}');
+    }
+  }
+  Share.share(buffer.toString(), subject: 'TalaKo Palengke List');
 }
 
 class _RestockRow extends StatefulWidget {

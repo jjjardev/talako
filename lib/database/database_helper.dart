@@ -29,7 +29,7 @@ class DatabaseHelper {
     final path = join(dbPath, fileName);
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: _configureDB,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -75,6 +75,8 @@ class DatabaseHelper {
         status TEXT NOT NULL DEFAULT 'ACTIVE',
         dish_id INTEGER,
         is_owner_consumption INTEGER NOT NULL DEFAULT 0,
+        is_cash_sale INTEGER NOT NULL DEFAULT 0,
+        deducted_ingredients INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (customer_id) REFERENCES customers(id)
       )
     ''');
@@ -86,6 +88,8 @@ class DatabaseHelper {
         quantity INTEGER NOT NULL DEFAULT 1,
         price REAL NOT NULL,
         subtotal REAL NOT NULL,
+        dish_id INTEGER,
+        unit_capital REAL NOT NULL DEFAULT 0,
         FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
       )
     ''');
@@ -98,6 +102,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         price REAL NOT NULL,
+        capital REAL NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
       )
     ''');
@@ -180,6 +185,27 @@ class DatabaseHelper {
       await db.execute(
           'ALTER TABLE transactions ADD COLUMN is_owner_consumption INTEGER NOT NULL DEFAULT 0');
       await _createInventoryTables(db);
+    }
+    if (oldVersion < 4) {
+      // Idempotent: some paths above already create current-shape tables.
+      await _ensureColumn(db, 'dishes', 'capital', 'REAL NOT NULL DEFAULT 0');
+      await _ensureColumn(db, 'transaction_items', 'dish_id', 'INTEGER');
+      await _ensureColumn(
+          db, 'transaction_items', 'unit_capital', 'REAL NOT NULL DEFAULT 0');
+      await _ensureColumn(
+          db, 'transactions', 'is_cash_sale', 'INTEGER NOT NULL DEFAULT 0');
+      await _ensureColumn(db,
+          'transactions', 'deducted_ingredients', 'INTEGER NOT NULL DEFAULT 0');
+    }
+  }
+
+  /// Adds [name] to [table] only when missing - safe against partially
+  /// upgraded databases and double-running migration blocks.
+  Future<void> _ensureColumn(
+      Database db, String table, String name, String definition) async {
+    final cols = await db.rawQuery('PRAGMA table_info($table)');
+    if (!cols.any((c) => c['name'] == name)) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $name $definition');
     }
   }
 
@@ -356,7 +382,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT * FROM transactions
-      WHERE status = 'ACTIVE' AND paid_amount < total_amount AND is_owner_consumption = 0
+      WHERE status = 'ACTIVE' AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0
       ORDER BY date ASC
     ''');
     return result.map((map) => Transaction.fromMap(map)).toList();
@@ -377,7 +403,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.query(
       'transactions',
-      where: 'customer_id = ? AND status = ? AND paid_amount < total_amount AND is_owner_consumption = 0',
+      where: 'customer_id = ? AND status = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
       whereArgs: [customerId, 'ACTIVE'],
       orderBy: 'date ASC',
     );
@@ -388,7 +414,7 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.query(
       'transactions',
-      where: 'customer_id = ? AND is_owner_consumption = 0 AND (status = ? OR paid_amount >= total_amount)',
+      where: 'customer_id = ? AND is_owner_consumption = 0 AND is_cash_sale = 0 AND (status = ? OR paid_amount >= total_amount)',
       whereArgs: [customerId, 'PAID'],
       orderBy: 'date DESC',
     );
@@ -398,7 +424,7 @@ class DatabaseHelper {
   Future<double> getCustomerOutstandingBalance(int customerId) async {
     final db = await database;
     final result = await db.rawQuery(
-      'SELECT COALESCE(SUM(total_amount - paid_amount), 0) as balance FROM transactions WHERE customer_id = ? AND paid_amount < total_amount AND is_owner_consumption = 0',
+      'SELECT COALESCE(SUM(total_amount - paid_amount), 0) as balance FROM transactions WHERE customer_id = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
       [customerId],
     );
     return (result.first['balance'] as num).toDouble();
@@ -411,7 +437,7 @@ class DatabaseHelper {
         COALESCE(SUM(t.total_amount - t.paid_amount), 0) as balance
       FROM customers c
       INNER JOIN transactions t ON t.customer_id = c.id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0
+      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0
       GROUP BY c.id
       HAVING balance > 0
     ''');
@@ -421,7 +447,7 @@ class DatabaseHelper {
     final db = await database;
     final cutoff = DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
     final result = await db.rawQuery(
-      'SELECT DISTINCT customer_id FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0 AND date < ?',
+      'SELECT DISTINCT customer_id FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?',
       [cutoff],
     );
     return result.map((row) => row['customer_id'] as int).toSet();
@@ -431,7 +457,7 @@ class DatabaseHelper {
     final db = await database;
     final cutoff = DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
     final result = await db.rawQuery(
-      'SELECT COUNT(*) as cnt FROM transactions WHERE customer_id = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND date < ?',
+      'SELECT COUNT(*) as cnt FROM transactions WHERE customer_id = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?',
       [customerId, cutoff],
     );
     return (result.first['cnt'] as int) > 0;
@@ -444,7 +470,7 @@ class DatabaseHelper {
       FROM customers c
       INNER JOIN transactions t ON t.customer_id = c.id
       WHERE c.id NOT IN (
-        SELECT DISTINCT customer_id FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0
+        SELECT DISTINCT customer_id FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0
       )
       GROUP BY c.id
       ORDER BY last_cleared DESC
@@ -474,14 +500,14 @@ class DatabaseHelper {
       SELECT t.*, c.name as customer_name
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.date < ?
+      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0 AND t.date < ?
       ORDER BY t.date ASC
     ''', [cutoff]);
   }
 
   Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer({int? customerId}) async {
     final db = await database;
-    String where = 'WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0';
+    String where = 'WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0';
     final args = <dynamic>[];
     if (customerId != null) {
       where += ' AND t.customer_id = ?';
@@ -540,7 +566,7 @@ class DatabaseHelper {
         MAX(t.date) as latest_date
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0
+      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0
       GROUP BY c.id
       ORDER BY MIN(t.date) ASC
     ''');
@@ -557,6 +583,8 @@ class DatabaseHelper {
     int customerId,
     List<Map<String, dynamic>> items, {
     bool isOwnerConsumption = false,
+    bool isCashSale = false,
+    bool deductedIngredients = false,
     int? dishId,
   }) async {
     final db = await database;
@@ -566,14 +594,19 @@ class DatabaseHelper {
       totalAmount += (item['subtotal'] as num).toDouble();
     }
     totalAmount = roundMoney(totalAmount);
+    // A cash sale is settled the moment it happens - it must never surface
+    // as debt anywhere, even if a future query forgets the flag.
+    final paid = isCashSale ? totalAmount : 0.0;
     return await db.transaction<int>((txn) async {
       final txnId = await txn.insert('transactions', {
         'customer_id': customerId,
         'date': date,
         'total_amount': totalAmount,
-        'paid_amount': 0,
-        'status': 'ACTIVE',
+        'paid_amount': paid,
+        'status': isCashSale ? 'PAID' : 'ACTIVE',
         'is_owner_consumption': isOwnerConsumption ? 1 : 0,
+        'is_cash_sale': isCashSale ? 1 : 0,
+        'deducted_ingredients': deductedIngredients ? 1 : 0,
         'dish_id': ?dishId,
       });
       for (final item in items) {
@@ -583,6 +616,8 @@ class DatabaseHelper {
           'quantity': item['quantity'],
           'price': item['price'],
           'subtotal': roundMoney((item['subtotal'] as num).toDouble()),
+          'dish_id': ?item['dish_id'],
+          'unit_capital': (item['unit_capital'] as num?)?.toDouble() ?? 0,
         });
       }
       return txnId;
@@ -771,6 +806,7 @@ class DatabaseHelper {
       SELECT
         COALESCE(SUM(CASE WHEN is_owner_consumption = 0 THEN total_amount ELSE 0 END), 0) AS sales,
         COALESCE(SUM(CASE WHEN is_owner_consumption = 0 THEN paid_amount ELSE 0 END), 0) AS collected,
+        COALESCE(SUM(CASE WHEN is_cash_sale = 1 THEN total_amount ELSE 0 END), 0) AS cash_sales,
         COALESCE(SUM(CASE WHEN is_owner_consumption = 1 THEN total_amount ELSE 0 END), 0) AS owner_use
       FROM transactions
       WHERE date >= ?
@@ -798,6 +834,44 @@ class DatabaseHelper {
     ''', [isoSince, limit]);
   }
 
+  // ─── Menu sales (cash taps + credit dish lines) ─────────────────────
+
+  /// Combined Today-style summary across BOTH channels: instant cash taps
+  /// and dishes sold on a customer's credit. Owner consumption excluded.
+  Future<Map<String, double>> getMenuSummarySince(String isoSince) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT
+        COALESCE(SUM(ti.price * ti.quantity), 0) AS sales,
+        COALESCE(SUM((ti.price - ti.unit_capital) * ti.quantity), 0) AS profit,
+        COALESCE(SUM(ti.quantity), 0) AS plates
+      FROM transaction_items ti
+      INNER JOIN transactions t ON t.id = ti.transaction_id
+      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0 AND t.date >= ?
+    ''', [isoSince]);
+    final row = result.first;
+    return {
+      'sales': (row['sales'] as num).toDouble(),
+      'profit': (row['profit'] as num).toDouble(),
+      'plates': (row['plates'] as num).toDouble(),
+    };
+  }
+
+  /// Served counts per dish since [isoSince] - keyed by dish id.
+  Future<Map<int, int>> getDishSaleCountsSince(String isoSince) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT ti.dish_id AS did, COUNT(*) AS cnt
+      FROM transaction_items ti
+      INNER JOIN transactions t ON t.id = ti.transaction_id
+      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0 AND t.date >= ?
+      GROUP BY ti.dish_id
+    ''', [isoSince]);
+    return {
+      for (final row in result) row['did'] as int: row['cnt'] as int,
+    };
+  }
+
   Future<List<TransactionItem>> getItemsByTransaction(int transactionId) async {
     final db = await database;
     final result = await db.query(
@@ -811,7 +885,7 @@ class DatabaseHelper {
   Future<int> getActiveTransactionCount() async {
     final db = await database;
     final result = await db.rawQuery(
-      'SELECT COUNT(*) as cnt FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0',
+      'SELECT COUNT(*) as cnt FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
     );
     return (result.first['cnt'] as int);
   }

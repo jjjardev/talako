@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'kitchen_screen.dart';
 import 'palengke_screen.dart';
 import 'stock_watch_screen.dart';
+import '../providers/inventory_provider.dart';
 
 class StockHomeScreen extends StatefulWidget {
   const StockHomeScreen({super.key});
@@ -13,12 +15,23 @@ class StockHomeScreen extends StatefulWidget {
 class _StockHomeScreenState extends State<StockHomeScreen> {
   _Segment _segment = _Segment.shelf;
 
+  bool get _onPalengke => _segment == _Segment.palengke;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stock'),
         centerTitle: true,
+        actions: [
+          if (_onPalengke)
+            IconButton(
+              tooltip: 'Share list',
+              icon: const Icon(Icons.share),
+              onPressed: () =>
+                  sharePalengkeList(context.read<InventoryProvider>()),
+            ),
+        ],
       ),
       body: Column(
         children: [

@@ -79,6 +79,19 @@ class SettingsScreen extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: const Text('Daily Profit Goal'),
+                  subtitle: const Text('Shown on the Menu tab'),
+                  onTap: () => _editDailyGoal(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
                   leading: const Icon(Icons.check_circle_outline),
                   title: const Text('Settled Debts'),
                   subtitle: const Text('View fully paid customers'),
@@ -120,6 +133,40 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editDailyGoal(BuildContext context) async {
+    final inv = context.read<InventoryProvider>();
+    final controller =
+        TextEditingController(text: (await inv.dailyGoal()).toString());
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Daily Profit Goal'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(),
+          decoration: const InputDecoration(
+            prefixText: '₱ ',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: () {
+              final goal = int.tryParse(controller.text.trim());
+              if (goal != null && goal > 0) inv.setDailyGoal(goal);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
           ),
         ],
       ),

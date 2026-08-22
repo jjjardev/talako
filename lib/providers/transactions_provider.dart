@@ -205,8 +205,10 @@ class TransactionsProvider extends ChangeNotifier {
     return txnId;
   }
 
-  /// Records a credit that may include a dish sale. When [deductIngredients]
-  /// is true, the dish's `fresh` ingredients are demoted to `use_soon`.
+  /// Records a credit that may include a dish sale. The matched dish line is
+  /// stamped with dish_id + unit_capital so margins and per-dish analytics
+  /// include credit sales. When [deductIngredients] is true, the dish's
+  /// `fresh` ingredients are demoted to `use_soon`.
   Future<int> addDishTransaction(
     int customerId,
     List<String> itemNames,
@@ -218,26 +220,35 @@ class TransactionsProvider extends ChangeNotifier {
     final items = <Map<String, dynamic>>[];
     for (int i = 0; i < itemNames.length; i++) {
       final subtotal = quantities[i] * prices[i];
+      final isDishLine = dish != null &&
+          itemNames[i].trim().toLowerCase() == dish.name.trim().toLowerCase();
       items.add({
         'item_name': itemNames[i],
         'quantity': quantities[i],
         'price': prices[i],
         'subtotal': subtotal.toDouble(),
+        if (isDishLine) 'dish_id': dish.id,
+        if (isDishLine) 'unit_capital': dish.capital,
       });
+    }
+    bool deducted = false;
+    if (deductIngredients && dish?.id != null) {
+      // Known asymmetry: tapping Undo on this credit deletes the receipt but
+      // cannot restore freshness (we do not snapshot pre-sale states).
+      // Demotion is demote-only, so worst case the owner re-taps to Fresh.
+      try {
+        final ids = await _db.getDishIngredientIds(dish!.id!);
+        deducted = await _db.demoteFreshIngredients(ids) > 0;
+      } catch (e, s) {
+        logError('dish-deduct', e, s);
+      }
     }
     final txnId = await _db.insertTransactionWithItems(
       customerId,
       items,
       dishId: dish?.id,
+      deductedIngredients: deducted,
     );
-    if (deductIngredients && dish?.id != null) {
-      try {
-        final ids = await _db.getDishIngredientIds(dish!.id!);
-        await _db.demoteFreshIngredients(ids);
-      } catch (e, s) {
-        logError('dish-deduct', e, s);
-      }
-    }
     await loadActiveTransactions();
     return txnId;
   }

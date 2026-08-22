@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../models/customer.dart';
 import '../models/dish.dart';
@@ -39,14 +40,29 @@ class InventoryProvider extends ChangeNotifier {
   List<Item> _items = [];
   List<DishWithIngredients> _dishes = [];
   Map<int, Set<ItemBadge>> _badges = {};
+  Map<int, int> _servedWeek = {};
   StockFilter _filter = StockFilter.all;
   bool _loading = false;
 
   List<Item> get items => _items;
   List<DishWithIngredients> get dishes => _dishes;
   Map<int, Set<ItemBadge>> get badges => _badges;
+  /// Served counts for the last 7 days, keyed by dish id.
+  Map<int, int> get servedWeek => _servedWeek;
   StockFilter get filter => _filter;
   bool get isLoading => _loading;
+
+  int get bestSellerDishId {
+    int bestId = -1;
+    int bestCount = 0;
+    _servedWeek.forEach((id, c) {
+      if (c > bestCount) {
+        bestCount = c;
+        bestId = id;
+      }
+    });
+    return bestCount >= 2 ? bestId : -1;
+  }
 
   bool isLowOrOut(Item i) =>
       i.stockStatus == StockStatus.runningLow ||
@@ -121,11 +137,23 @@ class InventoryProvider extends ChangeNotifier {
       _items = await _db.getAllItems(newestFirst: false);
       await _loadBadges();
       await _loadDishes();
+      await _loadServedCounts();
     } catch (e, s) {
       logError('load-inventory', e, s);
     }
     _loading = false;
     notifyListeners();
+  }
+
+  Future<void> _loadServedCounts() async {
+    try {
+      final since =
+          DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
+      _servedWeek = await _db.getDishSaleCountsSince(since);
+    } catch (e, s) {
+      logError('load-served-counts', e, s);
+      _servedWeek = {};
+    }
   }
 
   String _normalize(String name) => name.trim().toLowerCase();
@@ -266,14 +294,20 @@ class InventoryProvider extends ChangeNotifier {
     int? dishId,
     required String name,
     required double price,
+    double capital = 0,
     required List<int> ingredientIds,
   }) async {
+    if (capital > 0 && price <= capital) {
+      return 'Puhunan must be below the selling price';
+    }
     try {
       if (dishId == null) {
-        final id = await _db.insertDish(Dish(name: name.trim(), price: price));
+        final id =
+            await _db.insertDish(Dish(name: name.trim(), price: price, capital: capital));
         await _db.setDishIngredients(id, ingredientIds);
       } else {
-        await _db.updateDish(Dish(id: dishId, name: name.trim(), price: price));
+        await _db.updateDish(
+            Dish(id: dishId, name: name.trim(), price: price, capital: capital));
         await _db.setDishIngredients(dishId, ingredientIds);
       }
       await loadInventory();
@@ -292,15 +326,83 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
-  /// Serving deducts by demoting `fresh` ingredients to `use_soon` only.
-  Future<void> serveDish(int dishId) async {
+  /// Serving a dish without recording money is no longer a feature:
+  /// every serve is a sale (cash tap or credit line). See recordTapSale.
+
+  // ─── Menu sales ────────────────────────────────────────────────────
+
+  /// One tap on a menu card = one recorded cash sale.
+  ///
+  /// Writes a settled transaction under the hidden "Cash Sales" customer
+  /// (never appears in the Credit Book), stamps dish_id + unit_capital for
+  /// truthful margins, demotes `fresh` ingredients to `use_soon`, and
+  /// returns this sale's margin for the snackbar.
+  Future<(int, double)?> recordTapSale(Dish dish) async {
     try {
-      final ids = await _db.getDishIngredientIds(dishId);
-      await _db.demoteFreshIngredients(ids);
+      var customer = await _db.getCustomerByName('Cash Sales');
+      customer ??= await _db.getCustomerById(
+          await _db.insertCustomer(Customer(name: 'Cash Sales')));
+      final customerId = customer?.id;
+      if (customerId == null || dish.id == null) return null;
+
+      final ids = await _db.getDishIngredientIds(dish.id!);
+      final deducted = await _db.demoteFreshIngredients(ids) > 0;
+
+      final txnId = await _db.insertTransactionWithItems(
+        customerId,
+        [
+          {
+            'item_name': dish.name,
+            'quantity': 1,
+            'price': dish.price,
+            'subtotal': dish.price,
+            'dish_id': dish.id,
+            'unit_capital': dish.capital,
+          }
+        ],
+        isCashSale: true,
+        deductedIngredients: deducted,
+        dishId: dish.id,
+      );
+      logInfo('tap-sale #$txnId ${dish.name} +${dish.margin}');
+      await loadInventory();
+      return (txnId, dish.margin);
+    } catch (e, s) {
+      logError('tap-sale', e, s);
+      return null;
+    }
+  }
+
+  /// Deletes exactly one tap-sale (Undo). Freshness stays as-is - demotion
+  /// is conservative and re-tapping Fresh costs nothing.
+  Future<void> deleteTapSale(int transactionId) async {
+    try {
+      await _db.deleteTransaction(transactionId);
       await loadInventory();
     } catch (e, s) {
-      logError('serve-dish', e, s);
+      logError('delete-tap-sale', e, s);
     }
+  }
+
+  /// Combined Today numbers across cash taps AND credit dish lines.
+  Future<Map<String, double>> todaySummary() =>
+      _db.getMenuSummarySince(_startOfToday().toIso8601String());
+
+  static DateTime _startOfToday() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  static const int defaultDailyGoal = 500;
+
+  Future<int> dailyGoal() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('daily_profit_goal') ?? defaultDailyGoal;
+  }
+
+  Future<void> setDailyGoal(int goal) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('daily_profit_goal', goal);
   }
 
   // ─── Spoilage ──────────────────────────────────────────────────────

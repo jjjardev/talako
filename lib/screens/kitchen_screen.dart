@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../models/dish.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
+import '../utils/currency_format.dart';
+import '../utils/snackbars.dart';
 import 'add_edit_dish_screen.dart';
 
 class KitchenScreen extends StatefulWidget {
@@ -11,7 +15,8 @@ class KitchenScreen extends StatefulWidget {
   State<KitchenScreen> createState() => _KitchenScreenState();
 }
 
-class _KitchenScreenState extends State<KitchenScreen> with TickerProviderStateMixin {
+class _KitchenScreenState extends State<KitchenScreen>
+    with TickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 2, vsync: this);
 
   @override
@@ -36,13 +41,13 @@ class _KitchenScreenState extends State<KitchenScreen> with TickerProviderStateM
           controller: _tabs,
           tabs: const [
             Tab(text: 'Ingredients'),
-            Tab(text: 'Dishes'),
+            Tab(text: 'Menu'),
           ],
         ),
         Expanded(
           child: TabBarView(
             controller: _tabs,
-            children: const [_IngredientsTab(), _DishesTab()],
+            children: const [_IngredientsTab(), _MenuTab()],
           ),
         ),
       ],
@@ -151,121 +156,317 @@ class _IngredientsTab extends StatelessWidget {
   }
 }
 
-class _DishesTab extends StatelessWidget {
-  const _DishesTab();
+class _MenuTab extends StatefulWidget {
+  const _MenuTab();
 
-  Color _color(DishAvailability a) => switch (a) {
+  @override
+  State<_MenuTab> createState() => _MenuTabState();
+}
+
+class _MenuTabState extends State<_MenuTab> {
+  Map<String, double>? _today;
+  int _goal = InventoryProvider.defaultDailyGoal;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshToday();
+  }
+
+  Future<void> _refreshToday() async {
+    final inv = context.read<InventoryProvider>();
+    final summary = await inv.todaySummary();
+    final goal = await inv.dailyGoal();
+    if (!mounted) return;
+    setState(() {
+      _today = summary;
+      _goal = goal;
+    });
+  }
+
+  Future<void> _sell(DishWithIngredients d) async {
+    HapticFeedback.mediumImpact();
+    final inv = context.read<InventoryProvider>();
+    final result = await inv.recordTapSale(d.dish);
+    if (!mounted || result == null) return;
+    final (txnId, margin) = result;
+    await _refreshToday();
+    if (!mounted) return;
+    showAutoDismissSnackBar(
+      ScaffoldMessenger.of(context),
+      message:
+          '+${formatCurrency(margin)} profit · Today ${formatCurrency(_today?['profit'] ?? margin)}',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          await context.read<InventoryProvider>().deleteTapSale(txnId);
+          _refreshToday();
+        },
+      ),
+    );
+  }
+
+  Future<void> _openEditor({DishWithIngredients? existing}) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => AddEditDishScreen(existing: existing)),
+    );
+    if (mounted) {
+      await context.read<InventoryProvider>().loadInventory();
+      _refreshToday();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inv = context.watch<InventoryProvider>();
+    final dishes = inv.dishes;
+
+    return Column(
+      children: [
+        _TodayStrip(today: _today, goal: _goal),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+          child: Row(
+            children: [
+              Text('${dishes.length} dishes',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _openEditor(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('New Dish'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: dishes.isEmpty
+              ? _EmptyMenu(onAdd: () => _openEditor())
+              : GridView.builder(
+                  padding: const EdgeInsets.fromLTRB(10, 4, 10, 90),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 180,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 0.88,
+                  ),
+                  itemCount: dishes.length,
+                  itemBuilder: (context, i) {
+                    final d = dishes[i];
+                    return _MenuCard(
+                      data: d,
+                      servedWeek: inv.servedWeek[d.dish.id] ?? 0,
+                      isBestSeller: inv.bestSellerDishId == d.dish.id,
+                      onTap: () => _sell(d),
+                      onLongPress: () => _openEditor(existing: d),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TodayStrip extends StatelessWidget {
+  final Map<String, double>? today;
+  final int goal;
+
+  const _TodayStrip({required this.today, required this.goal});
+
+  @override
+  Widget build(BuildContext context) {
+    final sales = today?['sales'] ?? 0;
+    final profit = today?['profit'] ?? 0;
+    final plates = (today?['plates'] ?? 0).toInt();
+    final passed = profit >= goal && goal > 0;
+    final progress = goal > 0 ? (profit / goal).clamp(0.0, 1.0) : 0.0;
+    final accent = passed ? Colors.green : Colors.teal;
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      color: passed ? Colors.green.shade50 : Colors.teal.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Today',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+                const Spacer(),
+                if (passed) ...[
+                  const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  const SizedBox(width: 4),
+                  const Text('Goal passed!',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green)),
+                  const SizedBox(width: 8),
+                ],
+                Text('$plates plates',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(formatCurrency(profit),
+                    style: TextStyle(
+                        fontSize: 26, fontWeight: FontWeight.bold, color: accent)),
+                const SizedBox(width: 6),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('profit · ${formatCurrency(sales)} sales',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
+                ),
+                const Spacer(),
+                Text('of ${formatCurrency(goal.toDouble())}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: Colors.grey.shade300,
+                valueColor: AlwaysStoppedAnimation<Color>(accent),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuCard extends StatelessWidget {
+  final DishWithIngredients data;
+  final int servedWeek;
+  final bool isBestSeller;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _MenuCard({
+    required this.data,
+    required this.servedWeek,
+    required this.isBestSeller,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  Color get _availabilityColor => switch (data.availability) {
         DishAvailability.available => Colors.green,
         DishAvailability.limited => Colors.orange,
         DishAvailability.unavailable => Colors.red,
       };
 
-  String _label(DishAvailability a) => switch (a) {
-        DishAvailability.available => 'Available',
-        DishAvailability.limited => 'Limited',
-        DishAvailability.unavailable => 'Unavailable',
-      };
+  @override
+  Widget build(BuildContext context) {
+    final dish = data.dish;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(height: 5, color: _availabilityColor),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(dish.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
+                      ),
+                      if (isBestSeller)
+                        const Text('🏆', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(formatCurrency(dish.price),
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Icon(Icons.circle, size: 9, color: _availabilityColor),
+                      const SizedBox(width: 4),
+                      Text('+${formatCurrency(dish.margin)}',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: dish.thinMargin ? Colors.orange : Colors.green)),
+                      const SizedBox(width: 4),
+                      if (dish.capital > 0)
+                        Text('${(dish.marginRate * 100).toStringAsFixed(0)}%',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: dish.thinMargin ? Colors.orange : Colors.grey.shade600)),
+                      if (dish.thinMargin) ...[
+                        const SizedBox(width: 4),
+                        const Text('⚠️', style: TextStyle(fontSize: 11)),
+                      ],
+                    ],
+                  ),
+                  if (servedWeek > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('served ${servedWeek}x this week',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyMenu extends StatelessWidget {
+  final VoidCallback onAdd;
+
+  const _EmptyMenu({required this.onAdd});
 
   @override
   Widget build(BuildContext context) {
-    final inv = context.watch<InventoryProvider>();
-
-    if (inv.dishes.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.restaurant_menu, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              'No dishes defined.\nDefine what goes into each ulam so you\nknow what you can serve.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
-      itemCount: inv.dishes.length,
-      itemBuilder: (context, i) {
-        final d = inv.dishes[i];
-        final avail = d.availability;
-        final color = _color(avail);
-        return Dismissible(
-          key: ValueKey(d.dish.id),
-          direction: DismissDirection.startToEnd,
-          background: Container(
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.only(left: 20),
-            color: Colors.green,
-            child: const Icon(Icons.check, color: Colors.white),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.restaurant_menu, size: 64, color: Colors.grey.shade400),
+          const SizedBox(height: 16),
+          Text(
+            'No menu items yet.\nAdd your ulam with its puhunan and price,\nthen tap to record every sale.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
           ),
-          confirmDismiss: (_) async {
-            await context.read<InventoryProvider>().serveDish(d.dish.id!);
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('"${d.dish.name}" marked as served - fresh ingredients moved to Use Soon'),
-              ));
-            }
-            return false;
-          },
-          child: Card(
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => AddEditDishScreen(existing: d)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            d.dish.name.toUpperCase(),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ),
-                        Text('₱${d.dish.price.toStringAsFixed(0)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(width: 8),
-                        Icon(Icons.circle, size: 12, color: color),
-                        const SizedBox(width: 4),
-                        Text(_label(avail),
-                            style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 4,
-                      children: [
-                        for (final ing in d.ingredients)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.circle, size: 8, color: ing.freshness.color),
-                              const SizedBox(width: 3),
-                              Text(ing.itemName, style: const TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: const Text('New Dish'),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

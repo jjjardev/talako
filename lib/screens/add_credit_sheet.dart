@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
 import '../models/dish.dart';
+import '../models/item.dart';
 import '../providers/customers_provider.dart';
 import '../providers/inventory_provider.dart';
 import '../providers/transactions_provider.dart';
@@ -26,6 +27,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   List<String> _customerSuggestions = [];
   List<String> _itemSuggestions = [];
   Map<String, Dish> _dishesByName = {};
+  Map<String, Item> _itemsByLowerName = {};
   final List<_LineItem> _items = [];
   bool _deductIngredients = false;
   bool _saving = false;
@@ -41,6 +43,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     final customers = await _db.getAllCustomers();
     final itemNames = await _db.getAllItemNames();
     final dishes = await _db.getAllDishes();
+    final items = await _db.getAllItems(newestFirst: false);
     if (!mounted) return;
     setState(() {
       _customerSuggestions = customers.map((c) => c.name).toList();
@@ -49,8 +52,25 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
       _dishesByName = {
         for (final d in dishes) d.name.toLowerCase(): d,
       };
+      _itemsByLowerName = {
+        for (final i in items) i.name.toLowerCase(): i,
+      };
     });
   }
+
+  /// Exact, case-insensitive match against dishes first, then catalog items.
+  void _autofillPrice(_LineItem line, String rawName) {
+    if (line.priceTouched) return;
+    final key = rawName.trim().toLowerCase();
+    if (key.isEmpty) return;
+    double? price = _dishesByName[key]?.price ?? _itemsByLowerName[key]?.price;
+    if (price == null || price <= 0) return;
+    line.price = price;
+    line.priceController.text = _formatPlain(price);
+  }
+
+  static String _formatPlain(double v) =>
+      v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
   /// First line that matches a defined dish (case-insensitive).
   Dish? get _matchedDish {
@@ -338,12 +358,16 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                           isDense: true,
                           contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                         ),
-                        onChanged: (v) => item.itemName = v,
+                        onChanged: (v) {
+                          item.itemName = v;
+                          _autofillPrice(item, v);
+                        },
                       );
                     },
                     onSelected: (v) {
                       item.itemName = v;
                       item.nameController.text = v;
+                      setState(() => _autofillPrice(item, v));
                     },
                   ),
                 ),
@@ -387,6 +411,8 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                     ),
                     keyboardType: TextInputType.number,
                     onChanged: (v) {
+                      // Manual edits win - autofill never overwrites these.
+                      item.priceTouched = true;
                       item.price = double.tryParse(v) ?? 0;
                       setState(() {});
                     },
@@ -423,6 +449,8 @@ class _LineItem {
   String itemName = '';
   int quantity = 1;
   double price = 0;
+  /// True once the user types a price manually - autofill then backs off.
+  bool priceTouched = false;
   final TextEditingController nameController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
 

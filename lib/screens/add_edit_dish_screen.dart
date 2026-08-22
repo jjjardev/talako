@@ -19,9 +19,14 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
       TextEditingController(text: widget.existing?.dish.name ?? '');
   late final TextEditingController _price = TextEditingController(
       text: widget.existing == null ? '' : widget.existing!.dish.price.toString());
+  late final TextEditingController _capital = TextEditingController(
+      text: widget.existing == null || widget.existing!.dish.capital == 0
+          ? ''
+          : widget.existing!.dish.capital.toString());
   late final Set<int> _ingredientIds =
       widget.existing?.ingredients.map((i) => i.itemId).toSet() ?? <int>{};
   List<String> _suggestions = [];
+  bool _hasIngredientItems = true;
   bool _saving = false;
 
   @override
@@ -32,16 +37,24 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
 
   Future<void> _loadSuggestions() async {
     final inv = context.read<InventoryProvider>();
-    final names = inv.items.map((i) => i.name).toList()
+    // Dishes are cooked from ingredients: only Ingredient/Both items qualify.
+    final names = inv.items
+        .where((i) => i.isIngredient)
+        .map((i) => i.name)
+        .toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     if (!mounted) return;
-    setState(() => _suggestions = names);
+    setState(() {
+      _suggestions = names;
+      _hasIngredientItems = _suggestions.isNotEmpty;
+    });
   }
 
   @override
   void dispose() {
     _name.dispose();
     _price.dispose();
+    _capital.dispose();
     super.dispose();
   }
 
@@ -52,6 +65,7 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
           dishId: widget.existing?.dish.id,
           name: _name.text.trim(),
           price: double.tryParse(_price.text.trim()) ?? 0,
+          capital: double.tryParse(_capital.text.trim()) ?? 0,
           ingredientIds: _ingredientIds.toList(),
         );
     if (!mounted) return;
@@ -124,6 +138,25 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                 return null;
               },
             ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _capital,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Capital / Puhunan per plate (₱)',
+                prefixText: '₱ ',
+                border: OutlineInputBorder(),
+                helperText: 'Your estimated cost - drives the margin shown on every sale',
+              ),
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null; // optional
+                final c = double.tryParse(v.trim());
+                if (c == null) return 'Enter a valid amount';
+                final p = double.tryParse(_price.text.trim()) ?? 0;
+                if (c >= p) return 'Puhunan must be below the selling price';
+                return null;
+              },
+            ),
             const SizedBox(height: 20),
             Text('Ingredients',
                 style: Theme.of(context).textTheme.titleMedium),
@@ -146,8 +179,10 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                   controller: controller,
                   focusNode: focusNode,
                   onSubmitted: (_) => onSubmitted(),
-                  decoration: const InputDecoration(
-                    hintText: 'Search items to add...',
+                  decoration: InputDecoration(
+                    hintText: _hasIngredientItems
+                        ? 'Search ingredients to add...'
+                        : 'No ingredients yet',
                     prefixIcon: Icon(Icons.search),
                     border: OutlineInputBorder(),
                     isDense: true,
@@ -161,6 +196,14 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                 setState(() => _ingredientIds.add(matches.first.id!));
               },
             ),
+            if (!_hasIngredientItems)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Mark items as Ingredient or Both first (Shelf tab, long-press an item).',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ),
             const SizedBox(height: 8),
             for (final id in _ingredientIds)
               if (inv.itemById(id) != null)
