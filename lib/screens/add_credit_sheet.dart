@@ -157,6 +157,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
             },
           ),
         );
+        await inv.loadInventory();
         await _promptOutOfStockRestock(inv, itemNames, messenger);
       }
     } catch (e, s) {

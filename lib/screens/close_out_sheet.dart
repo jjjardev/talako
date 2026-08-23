@@ -102,7 +102,12 @@ class _CloseOutSheetState extends State<CloseOutSheet> {
             const SizedBox(height: 12),
             const Text('No dishes sold today.'),
             const SizedBox(height: 12),
-            FilledButton.tonal(onPressed: _save, child: const Text('Close day anyway')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+              onPressed: _save,
+              child: const Text('Close day anyway',
+                  style: TextStyle(color: Colors.white)),
+            ),
             const SizedBox(height: 16),
           ],
         ),

@@ -339,6 +339,7 @@ class _MenuTabState extends State<_MenuTab> {
           ),
         _TodayStrip(
           today: _today,
+          canUndo: (_today?['plates'] ?? 0) > 0,
           onUndo: _undoLast,
           onReset: _resetTaps,
           onEndDay: dishes.isEmpty ? null : _openCloseOut,
@@ -412,12 +413,14 @@ class _MenuTabState extends State<_MenuTab> {
 
 class _TodayStrip extends StatelessWidget {
   final Map<String, double>? today;
+  final bool canUndo;
   final VoidCallback onUndo;
   final VoidCallback onReset;
   final VoidCallback? onEndDay;
 
   const _TodayStrip({
     required this.today,
+    required this.canUndo,
     required this.onUndo,
     required this.onReset,
     this.onEndDay,
@@ -459,7 +462,7 @@ class _TodayStrip extends StatelessWidget {
                   tooltip: 'Undo last tap-sale',
                   style: IconButton.styleFrom(foregroundColor: Colors.teal.shade800),
                   icon: const Icon(Icons.undo, size: 20),
-                  onPressed: onUndo,
+                  onPressed: canUndo ? onUndo : null,
                 ),
                 IconButton(
                   tooltip: 'Reset all taps today',
@@ -545,12 +548,16 @@ class RecapCard extends StatelessWidget {
             Row(mainAxisAlignment: MainAxisAlignment.end, children: [
               TextButton.icon(
                 onPressed: () => Share.share(shareText.toString(), subject: 'TalaKo Day Recap'),
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.indigo.shade900),
                 icon: const Icon(Icons.share, size: 16),
                 label: const Text('Share'),
               ),
-              FilledButton.tonal(
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.indigo),
                 onPressed: onDismiss,
-                child: const Text('Got it'),
+                child: const Text('Got it',
+                    style: TextStyle(color: Colors.white)),
               ),
             ]),
           ],
