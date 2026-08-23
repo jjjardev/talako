@@ -955,7 +955,7 @@ class DatabaseHelper {
   Future<Map<int, int>> getDishSaleCountsSince(String isoSince) async {
     final db = await database;
     final result = await db.rawQuery('''
-      SELECT ti.dish_id AS did, COUNT(*) AS cnt
+      SELECT ti.dish_id AS did, COALESCE(SUM(ti.quantity), 0) AS cnt
       FROM transaction_items ti
       INNER JOIN transactions t ON t.id = ti.transaction_id
       WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0 AND t.date >= ?

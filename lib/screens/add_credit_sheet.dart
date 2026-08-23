@@ -71,14 +71,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   static String _formatPlain(double v) =>
       v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
-  /// First line that matches a defined dish (case-insensitive).
-  Dish? get _matchedDish {
-    for (final line in _items) {
-      final dish = _dishesByName[line.itemName.trim().toLowerCase()];
-      if (dish != null && line.price > 0) return dish;
-    }
-    return null;
-  }
 
   double get _total {
     double sum = 0;
@@ -129,7 +121,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     final quantities = validItems.map((i) => i.quantity).toList();
     final prices = validItems.map((i) => i.price).toList();
 
-    final dish = _matchedDish;
     final txnProvider = context.read<TransactionsProvider>();
     try {
       final txnId = await txnProvider.addDishTransaction(
@@ -137,7 +128,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         itemNames,
         quantities,
         prices,
-        dish: dish,
       );
       if (mounted) {
         setState(() => _saving = false);

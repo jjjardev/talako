@@ -106,9 +106,7 @@ class InventoryProvider extends ChangeNotifier {
     return lowOrOutList;
   }
 
-  /// Unified shopping list: everything Running Low or Out of Stock,
-  /// regardless of type. Out-of-stock sorts first.
-    void setFilter(StockFilter f) {
+  void setFilter(StockFilter f) {
     _filter = f;
     notifyListeners();
   }
