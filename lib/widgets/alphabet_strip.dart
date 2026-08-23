@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 
 /// Contacts-style A-Z index strip. Renders only the letters that exist.
 ///
-/// Uses raw [Listener] pointer events on purpose: a normal vertical-drag
-/// GestureDetector loses the gesture arena to ancestor scrollers /
-/// RefreshIndicators, which made this strip feel dead. Pointer events
-/// always arrive regardless of the arena.
-class AlphabetStrip extends StatefulWidget {
+/// Deliberately tap-per-letter (onTapDown for instant response): a
+/// drag-along-the-strip implementation loses the gesture arena to the
+/// scroll views underneath and feels dead on real devices.
+class AlphabetStrip extends StatelessWidget {
   final List<String> letters;
   final ValueChanged<String> onLetter;
 
@@ -57,58 +56,35 @@ class AlphabetStrip extends StatefulWidget {
   }
 
   @override
-  State<AlphabetStrip> createState() => _AlphabetStripState();
-}
-
-class _AlphabetStripState extends State<AlphabetStrip> {
-  String? _active;
-
-  void _handle(Offset local) {
-    final box = context.findRenderObject() as RenderBox?;
-    final height = box?.size.height ?? 0;
-    if (widget.letters.isEmpty || height <= 0) return;
-    final slot = (local.dy / height * widget.letters.length).floor();
-    final i = slot.clamp(0, widget.letters.length - 1);
-    widget.onLetter(widget.letters[i]);
-    if (_active != widget.letters[i]) {
-      setState(() => _active = widget.letters[i]);
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (widget.letters.length < 2) return const SizedBox.shrink();
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (d) => _handle(d.localPosition),
-      onPointerMove: (d) => _handle(d.localPosition),
-      onPointerUp: (_) => setState(() => _active = null),
-      onPointerCancel: (_) => setState(() => _active = null),
-      child: Container(
-        width: 22,
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (final l in widget.letters)
-              Expanded(
+    if (letters.length < 2) return const SizedBox.shrink();
+    return Container(
+      width: 24,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (final l in letters)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (_) => onLetter(l),
                 child: Center(
                   child: Text(
                     l,
                     style: TextStyle(
-                      fontSize: _active == l ? 13 : 10,
-                      fontWeight:
-                          _active == l ? FontWeight.bold : FontWeight.w500,
-                      color: _active == l
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.grey.shade500,
+                      fontSize: _fontSize(l),
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
+
+  double _fontSize(String l) => l.length > 1 ? 9 : 11;
 }

@@ -125,7 +125,7 @@ class _IngredientsTabState extends State<_IngredientsTab> {
             itemCount: sorted.length,
         itemBuilder: (context, i) {
           final item = sorted[i];
-        const color = Colors.teal;
+        final bandColor = item.stockStatus.color;
         return Card(
           clipBehavior: Clip.antiAlias,
           margin: EdgeInsets.zero,
@@ -134,7 +134,7 @@ class _IngredientsTabState extends State<_IngredientsTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(height: 5, color: color),
+                Container(height: 5, color: bandColor),
                 Padding(
                   padding: const EdgeInsets.all(8),
                   child: Column(
