@@ -1,12 +1,8 @@
 # TalaKo — Offline Credit Management for Small Stores
 
-**Track debts. Accept payments. Never lose a notebook again.**
+**Track debts. Sell your ulam with one tap. Never lose a notebook again.**
 
-Now with **Stock Watch, Menu Inventory & Shopping List** — a 30-second shelf scan instead of inventory counting.
-
-**Track debts. Accept payments. Never lose a notebook again.**
-
-TalaKo is an **offline-first** Android app for small store owners who sell on credit. No internet needed. No account required.
+TalaKo is an **offline-first** Android app for small store owners who sell on credit — and for carinderias that want to know their profit per plate. No internet needed. No account required.
 
 [Download Latest Release](https://github.com/jjjardev/talako/releases) • [Full Documentation](DOCUMENTATION.md)
 
@@ -22,43 +18,42 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 - Toggle to group all receipts of the same customer into one aggregated tile
 
 **Credit Recording**
-- Tap + to add a new credit with multiple items
-- New items insert at the top; the whole form scrolls when keyboard is open
-- Autocomplete for customer names and item names
-- Quantity steppers and inline price entry
-- Total auto-calculated
+- Tap + to add a new credit with multiple items — including dishes 🍽️
+- Autocomplete for customer names, items and dishes
+- Quantity steppers, inline price entry, auto-calculated total
 - Undo: SnackBar appears after saving — tap Undo to delete the transaction
 
 **Payment Management**
 - Numpad keypad for entering payment amounts
 - Supports partial payments
 - Receipt-based: payments apply to the whole transaction, not individual items
-- Undo: SnackBar appears after paying — tap Undo to reverse the payment
+- Undo after paying — reverses the payment instantly
 
-**Backup & Restore**
-- JSON export — human-readable, shareable via Messenger/email
-- Raw .db export — exact binary copy
-- Import both formats with confirmation
+**Menu Inventory** *(for carinderias & food counters)*
+- Each dish carries its **Cost (Puhunan)** and **Selling Price** — margin shown on every card in pesos and percent
+- **One tap = one sale recorded**, with per-tap Undo and a day-reset button for misclicks
+- Today strip: profit earned, plates served — across cash taps AND dishes sold on credit
+- Sold-Nx-today chip, best-seller 🏆 badge, thin-margin warning below 20%
+- End-of-Day recap: yesterday's sales per dish, plus leftover handling — reheat tomorrow, reuse as ingredient, or log as waste
 
 **Stock Watch (Shelf)**
-- Macro stock statuses: Well Stocked → Running Low → Out of Stock → Cold — tap to cycle
+- Macro stock statuses: Well Stocked → Running Low → Out of Stock → Cold — tap to cycle. No counting, ever
 - Auto badges from sales history: 🔥 Hot · 🌡️ Cooling · 🧊 Cold · 🏷️ New
-- Filter chips; long-press any item for notes, price and usage type (Retail / Ingredient / Both)
+- A-to-Z quick-jump strip; filter chips; long-press any item for notes, price and usage type (Retail / Ingredient / Both — ingredients don't need a selling price)
 
-**Kitchen Mode**
-- Ingredient freshness tracking: Fresh → Use Soon → Frozen → Empty/Spoiled
-- Define dishes once; the app derives 🟢 Available / 🟡 Limited / 🔴 Unavailable
-- Serving a dish demotes its fresh ingredients to Use Soon (opt-in)
-- Spoilage log with estimated value
-
-**Palengke List**
-- One shared list: dry goods + wet market needs, sorted by urgency
-- Check items off as bought (resets to Well Stocked / Fresh)
+**Shopping List**
+- Builds itself from Running Low / Out of Stock items, most urgent first
+- Check items off as bought (resets to Well Stocked)
 - Share via SMS/Messenger so family can do the market run
 
 **Owner Tools**
 - "Owner Took Stock" quick log (never counts as sales or debt)
 - Personal Use Log + Monthly Store Report (sales, spoilage, top sellers)
+
+**Backup & Restore**
+- JSON export — human-readable, shareable via Messenger/email
+- Raw .db export — exact binary copy
+- Import both formats with confirmation
 
 **Settings**
 - Dark/Light theme toggle (persisted)
@@ -70,17 +65,20 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 ## How to Use
 
 1. **Install** — download `app-release.apk` and install on your Android phone
-2. **First launch** — a 4-page onboarding explains the app. Swipe through or tap Skip.
-3. **Add a credit** — tap the + FAB, type customer name and items, set quantity and price
+2. **First launch** — a short onboarding explains the app. Swipe through or tap Skip.
+3. **Add a credit** — tap the + FAB on the Credit Book, type customer name and items, set quantity and price
 4. **Track debts** — the Credit Book shows all active debts with item breakdowns
 5. **Record payments** — tap the green Pay button on any tile, enter amount on the numpad
-6. **Back up regularly** — go to Settings, export a backup
+6. **Set up your menu** — Stock tab → Menu → New Dish: add cost and price, then tap a card to record each sale
+7. **Shelf scan** — every morning, tap items that changed status; the Shopping List builds itself
+8. **Back up regularly** — go to Settings, export a backup
 
 ---
 
 ## Target Users
 
 - **Sari-sari store owners** who sell on credit to regular customers
+- **Carinderia owners** tracking ulam sales, puhunan vs tinda, and daily profit
 - **Tricycle operators** tracking daily boundary payments from drivers
 - **Rice retailers** tracking kilo-based credit
 - **Water refilling stations** tracking customer deposits and refills
@@ -94,12 +92,12 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 |--------|-------|
 | **Platform** | Android (offline-first) |
 | **Framework** | Flutter 3.x (Dart) |
-| **Database** | SQLite (sqflite) |
+| **Database** | SQLite (sqflite), schema v6 |
 | **State management** | Provider (ChangeNotifier) |
-| **APK size** | ~50 MB |
+| **APK size** | ~52 MB |
 | **Min SDK** | Android 5.0 (API 21) |
 | **Internet** | Not required |
-| **Backup formats** | JSON + raw .db |
+| **Tests** | 40+ automated tests (database, margins, end-of-day, UI logic) |
 | **License** | Apache 2.0 |
 
 ---
@@ -108,13 +106,18 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 
 ```
 lib/
-├── main.dart                      # App entry + theme + routing
-├── screens/main_shell.dart        # Bottom nav (Credit Book / Settings)
-├── database/database_helper.dart  # SQLite singleton
-├── models/                        # Transaction, TransactionItem, Customer, Item
-├── providers/                     # Transactions, Customers, Theme
-├── screens/                       # CreditBook, AddCreditSheet, PaySheet, Settings, SettledDebts, Onboarding
-└── utils/                         # Currency and date formatters
+├── main.dart                      # App entry + providers + routing
+├── database/database_helper.dart  # SQLite singleton (schema v6, migrations v1→v6)
+├── models/                        # Item, Dish, Transaction, Customer, enums
+├── providers/                     # Transactions, Customers, Inventory, Theme
+├── screens/
+│   ├── main_shell.dart            # Bottom nav (Credit Book / Stock / Settings)
+│   ├── collections_screen.dart    # Credit Book dashboard
+│   ├── stock_home_screen.dart     # Shelf | Kitchen(Menu) | Shopping List
+│   ├── kitchen_screen.dart        # Menu grid + ingredients
+│   └── ...                        # PaySheet, AddCredit, Settings, Onboarding
+├── widgets/alphabet_strip.dart    # A-Z quick-jump index
+└── utils/                         # Money, currency/date formatters, snackbars
 ```
 
 ---
@@ -123,6 +126,7 @@ lib/
 
 ```bash
 flutter pub get
+flutter test        # run the test suite
 flutter build apk --release
 ```
 
