@@ -458,15 +458,24 @@ class _TodayStrip extends StatelessWidget {
                       style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
                 ),
                 const Spacer(),
+                // Solid fills on purpose: tinted foregrounds kept blending
+                // with the pastel card on some devices/themes.
                 IconButton(
                   tooltip: 'Undo last tap-sale',
-                  style: IconButton.styleFrom(foregroundColor: Colors.teal.shade800),
+                  style: IconButton.styleFrom(
+                    backgroundColor:
+                        canUndo ? Colors.teal.shade700 : Colors.grey.shade400,
+                    foregroundColor: Colors.white,
+                  ),
                   icon: const Icon(Icons.undo, size: 20),
                   onPressed: canUndo ? onUndo : null,
                 ),
                 IconButton(
                   tooltip: 'Reset all taps today',
-                  style: IconButton.styleFrom(foregroundColor: Colors.red.shade700),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.red.shade600,
+                    foregroundColor: Colors.white,
+                  ),
                   icon: const Icon(Icons.restart_alt, size: 20),
                   onPressed: onReset,
                 ),
@@ -475,13 +484,20 @@ class _TodayStrip extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton.icon(
-                  onPressed: onEndDay,
-                  style: TextButton.styleFrom(
-                      foregroundColor: Colors.teal.shade800),
-                  icon: const Icon(Icons.nightlight_outlined, size: 16),
-                  label: const Text('End Day'),
-                ),
+                if (onEndDay != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.teal.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                      ),
+                      onPressed: onEndDay,
+                      icon: const Icon(Icons.nightlight_outlined, size: 16),
+                      label: const Text('End Day'),
+                    ),
+                  ),
               ],
             ),
           ],
