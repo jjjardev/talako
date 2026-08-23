@@ -29,7 +29,7 @@ class DatabaseHelper {
     final path = join(dbPath, fileName);
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onConfigure: _configureDB,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -94,6 +94,7 @@ class DatabaseHelper {
       )
     ''');
     await _createInventoryTables(db);
+    await _createIndexes(db);
   }
 
   Future<void> _createInventoryTables(Database db) async {
@@ -219,6 +220,22 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 6) {
+      await _createIndexes(db);
+    }
+  }
+
+  /// Hot-path indexes. Safe on every shape: called after all tables and
+  /// columns exist (end of onCreate / final upgrade step).
+  Future<void> _createIndexes(Database db) async {
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_txn_date ON transactions(date)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_ti_txn ON transaction_items(transaction_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_ti_dish ON transaction_items(dish_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_txn_cash_day ON transactions(is_cash_sale, date)');
   }
 
 
@@ -784,9 +801,9 @@ class DatabaseHelper {
     final db = await database;
     return await db.rawQuery('''
       SELECT ti.dish_id AS dish_id, d.name AS name, d.price AS price,
-        COUNT(*) AS plates,
-        COALESCE(SUM(ti.price), 0) AS sales,
-        COALESCE(SUM((ti.price - ti.unit_capital) * 1), 0) AS profit
+        COALESCE(SUM(ti.quantity), 0) AS plates,
+        COALESCE(SUM(ti.price * ti.quantity), 0) AS sales,
+        COALESCE(SUM((ti.price - ti.unit_capital) * ti.quantity), 0) AS profit
       FROM transaction_items ti
       INNER JOIN transactions t ON t.id = ti.transaction_id
       INNER JOIN dishes d ON d.id = ti.dish_id

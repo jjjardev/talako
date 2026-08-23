@@ -194,6 +194,36 @@ group('end of day', () {
     expect((await inv.todaySummary())['plates'], greaterThanOrEqualTo(2));
   });
 
+  test('recap math handles multi-quantity credit lines', () async {
+    final db = DatabaseHelper.instance;
+    final txnProvider = TransactionsProvider();
+    final customerId = await db.insertCustomer(Customer(name: 'Qty Cust'));
+    final dish = (await db.getAllDishes()).firstWhere((d) => d.name == 'Tapsilog');
+
+    final now = DateTime.now();
+    final dayStart =
+        InventoryProvider.dateStr(DateTime(now.year, now.month, now.day));
+    final dayEnd = InventoryProvider.dateStr(now.add(const Duration(days: 1)));
+
+    double platesFor(List<Map<String, dynamic>> rows) =>
+        rows.where((r) => r['name'] == 'Tapsilog')
+            .fold(0, (a, r) => a + (r['plates'] as num).toDouble());
+    double profitFor(List<Map<String, dynamic>> rows) =>
+        rows.where((r) => r['name'] == 'Tapsilog')
+            .fold(0.0, (a, r) => a + (r['profit'] as num).toDouble());
+
+    final beforeRows = await db.getDishRecapForDay(dayStart, dayEnd);
+
+    await txnProvider.addDishTransaction(
+        customerId, ['Tapsilog'], [3], [75], dish: dish);
+
+    final afterRows = await db.getDishRecapForDay(dayStart, dayEnd);
+    expect(platesFor(afterRows) - platesFor(beforeRows), 3,
+        reason: 'plates must count quantity, not receipt lines');
+    expect(profitFor(afterRows) - profitFor(beforeRows), closeTo(99.0, 0.001),
+        reason: 'profit = (price - capital) x quantity');
+  });
+
   test('dispositions: ingredient pseudo-item + spoiled->spoilage log',
       () async {
     final db = DatabaseHelper.instance;

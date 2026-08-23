@@ -243,7 +243,7 @@ void main() {
           reason: 'well-stocked hot item stays out of Low/Out filter');
       inv.setFilter(StockFilter.all);
 
-      expect(inv.palengkeDryGoods.any((i) => i.id == lowId), isTrue);
+      expect(inv.shoppingList.any((i) => i.id == lowId), isTrue);
     });
 
     test('cycle helpers persist through provider', () async {

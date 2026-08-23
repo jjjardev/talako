@@ -87,7 +87,7 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
-  List<Item> get palengkeDryGoods {
+  List<Item> get shoppingList {
     final lowOrOutList = _items.where(isLowOrOut).toList();
     int rank(Item i) => switch (i.stockStatus) {
           StockStatus.outOfStock => 0,
@@ -104,9 +104,7 @@ class InventoryProvider extends ChangeNotifier {
 
   /// Unified shopping list: everything Running Low or Out of Stock,
   /// regardless of type. Out-of-stock sorts first.
-  List<Item> get shoppingList => palengkeDryGoods;
-
-  void setFilter(StockFilter f) {
+    void setFilter(StockFilter f) {
     _filter = f;
     notifyListeners();
   }
@@ -328,7 +326,9 @@ class InventoryProvider extends ChangeNotifier {
         dishId: dish.id,
       );
       logInfo('tap-sale #$txnId ${dish.name} +${dish.margin}');
-      await loadInventory();
+      // Hot path: no full reload during a rush - just bump served count.
+      _servedWeek[dish.id!] = (_servedWeek[dish.id!] ?? 0) + 1;
+      notifyListeners();
       return (txnId, dish.margin);
     } catch (e, s) {
       logError('tap-sale', e, s);
@@ -371,30 +371,36 @@ class InventoryProvider extends ChangeNotifier {
 
   /// Runs on Menu open: if yesterday was never closed out, computes its
   /// recap and holds it as [pendingRecap] until the UI handles it.
+  /// Runs on Menu open. Builds a recap for every unclosed day and holds it
+  /// in [pendingRecap] until dismissed - the closed-through marker is only
+  /// advanced on dismissal, so the recap survives app restarts.
   Future<void> maybeRunEndOfDay() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final today = dateStr(DateTime.now());
-      final stored = prefs.getString('last_eod_day');
-      if (stored == today) return;
-      if (stored != null) {
-        // Owner may not have opened the app for days - roll every unclosed
-        // day into one combined recap (stored day through yesterday).
-        final startDay = DateTime.tryParse(stored) ?? DateTime.now();
-        final endDay = DateTime.now().subtract(const Duration(days: 1));
-        final rows = await _db.getDishRecapForDay(
-          dateStr(startDay),
-          dateStr(endDay.add(const Duration(days: 1))),
-        );
-        if (rows.isNotEmpty) {
-          pendingRecap = {
-            'day': dateStr(startDay),
-            'rangeEnd': dateStr(endDay),
-            'rows': rows,
-          };
-        }
+      final lastClosed = prefs.getString('last_eod_day');
+      if (lastClosed == null) {
+        // First launch: baseline without a recap.
+        await prefs.setString('last_eod_day', today);
+        return;
       }
-      await prefs.setString('last_eod_day', today);
+      if (lastClosed == today) return;
+      final startDay = DateTime.tryParse(lastClosed) ?? DateTime.now();
+      final endDay = DateTime.now().subtract(const Duration(days: 1));
+      final rows = await _db.getDishRecapForDay(
+        dateStr(startDay),
+        dateStr(endDay.add(const Duration(days: 1))),
+      );
+      if (rows.isEmpty) {
+        // Nothing to report - advance the marker quietly.
+        await prefs.setString('last_eod_day', today);
+        return;
+      }
+      pendingRecap = {
+        'day': lastClosed,
+        'rangeEnd': dateStr(endDay),
+        'rows': rows,
+      };
     } catch (e, s) {
       logError('eod-auto', e, s);
     }
