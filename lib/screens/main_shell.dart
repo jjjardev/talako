@@ -81,7 +81,7 @@ class _MainShellState extends State<MainShell> {
       );
     }
     if (_currentIndex == 1) {
-      return FloatingActionButton.small(
+      return FloatingActionButton(
         onPressed: () => showModalBottomSheet(
           context: context,
           isScrollControlled: true,

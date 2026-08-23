@@ -7,6 +7,9 @@ import '../providers/inventory_provider.dart';
 import '../utils/currency_format.dart';
 import '../utils/snackbars.dart';
 import 'add_edit_dish_screen.dart';
+import 'close_out_sheet.dart';
+import '../widgets/alphabet_strip.dart';
+import 'package:share_plus/share_plus.dart';
 
 class KitchenScreen extends StatefulWidget {
   const KitchenScreen({super.key});
@@ -55,8 +58,22 @@ class _KitchenScreenState extends State<KitchenScreen>
   }
 }
 
-class _IngredientsTab extends StatelessWidget {
+class _IngredientsTab extends StatefulWidget {
   const _IngredientsTab();
+
+  @override
+  State<_IngredientsTab> createState() => _IngredientsTabState();
+}
+
+class _IngredientsTabState extends State<_IngredientsTab> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
 
   String _relative(String? iso) {
     final dt = DateTime.tryParse(iso ?? '');
@@ -87,17 +104,27 @@ class _IngredientsTab extends StatelessWidget {
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 90),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 180,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1.05,
-      ),
-      itemCount: ingredients.length,
-      itemBuilder: (context, i) {
-        final item = ingredients[i];
+    final sorted = [...ingredients]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return LayoutBuilder(
+      builder: (context, cons) {
+      final offsets =
+          AlphabetStrip.letterOffsets(sorted.map((i) => i.name).toList());
+      const extent = 145.0;
+      return Stack(
+        children: [
+          GridView.builder(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(10, 8, 30, 90),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: extent,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.05,
+            ),
+            itemCount: sorted.length,
+        itemBuilder: (context, i) {
+          final item = sorted[i];
         final dishCount = inv.dishes
             .where((d) => d.ingredients.any((line) => line.itemId == item.id))
             .length;
@@ -150,7 +177,34 @@ class _IngredientsTab extends StatelessWidget {
               ],
             ),
           ),
-        );
+          );
+        },
+      ),
+      Positioned(
+        right: 2,
+        top: 0,
+        bottom: 90,
+        child: Center(
+          child: AlphabetStrip(
+            letters: offsets.keys.toList(),
+            onLetter: (l) {
+              final idx = offsets[l]!;
+              const extent = 145.0;
+              final columns = (cons.maxWidth / extent).floor().clamp(1, 10);
+              final cardW = (cons.maxWidth - 40) / columns;
+              final rowH = cardW / 1.05 + 8.0;
+              final row = idx ~/ columns;
+              _scroll.animateTo(
+                (row * rowH).clamp(0.0, double.maxFinite),
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+              );
+            },
+          ),
+        ),
+      ),
+    ],
+      );
       },
     );
   }
@@ -165,44 +219,60 @@ class _MenuTab extends StatefulWidget {
 
 class _MenuTabState extends State<_MenuTab> {
   Map<String, double>? _today;
-  int _goal = InventoryProvider.defaultDailyGoal;
 
   @override
   void initState() {
     super.initState();
-    _refreshToday();
-  }
-
-  Future<void> _refreshToday() async {
-    final inv = context.read<InventoryProvider>();
-    final summary = await inv.todaySummary();
-    final goal = await inv.dailyGoal();
-    if (!mounted) return;
-    setState(() {
-      _today = summary;
-      _goal = goal;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final inv = context.read<InventoryProvider>();
+      await inv.maybeRunEndOfDay();
+      await _refreshToday();
+      if (mounted) setState(() {});
     });
   }
 
-  Future<void> _sell(DishWithIngredients d) async {
-    HapticFeedback.mediumImpact();
-    final inv = context.read<InventoryProvider>();
-    final result = await inv.recordTapSale(d.dish);
-    if (!mounted || result == null) return;
-    final (txnId, margin) = result;
+  Future<void> _refreshToday() async {
+    final summary = await context.read<InventoryProvider>().todaySummary();
+    if (!mounted) return;
+    setState(() => _today = summary);
+  }
+
+  Future<void> _undoLast() async {
+    final ok = await context.read<InventoryProvider>().undoLastTapSale();
+    if (!mounted) return;
     await _refreshToday();
     if (!mounted) return;
     showAutoDismissSnackBar(
       ScaffoldMessenger.of(context),
-      message:
-          '+${formatCurrency(margin)} profit · Today ${formatCurrency(_today?['profit'] ?? margin)}',
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () async {
-          await context.read<InventoryProvider>().deleteTapSale(txnId);
-          _refreshToday();
-        },
+      message: ok ? 'Last sale undone' : 'No tap-sales to undo today',
+    );
+  }
+
+  Future<void> _resetTaps() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset today\'s taps?'),
+        content: const Text(
+            'This deletes every cash sale you tapped today (misclick cleanup). '
+            'Customer credit receipts are NOT touched.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reset', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
+    );
+    if (confirmed != true || !mounted) return;
+    final n = await context.read<InventoryProvider>().resetTodayTaps();
+    if (!mounted) return;
+    await _refreshToday();
+    if (!mounted) return;
+    showAutoDismissSnackBar(
+      ScaffoldMessenger.of(context),
+      message: '$n tapped sale${n == 1 ? '' : 's'} removed',
     );
   }
 
@@ -217,6 +287,22 @@ class _MenuTabState extends State<_MenuTab> {
     }
   }
 
+  Future<void> _openCloseOut() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const CloseOutSheet(),
+    );
+    if (mounted) {
+      await context.read<InventoryProvider>().loadInventory();
+      _refreshToday();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final inv = context.watch<InventoryProvider>();
@@ -224,7 +310,20 @@ class _MenuTabState extends State<_MenuTab> {
 
     return Column(
       children: [
-        _TodayStrip(today: _today, goal: _goal),
+        if (inv.pendingRecap != null)
+          RecapCard(
+            recap: inv.pendingRecap!,
+            onDismiss: () async {
+              await inv.markDayClosed();
+              if (mounted) setState(() {});
+            },
+          ),
+        _TodayStrip(
+          today: _today,
+          onUndo: _undoLast,
+          onReset: _resetTaps,
+          onEndDay: dishes.isEmpty ? null : _openCloseOut,
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
           child: Row(
@@ -267,78 +366,163 @@ class _MenuTabState extends State<_MenuTab> {
       ],
     );
   }
+
+  Future<void> _sell(DishWithIngredients d) async {
+    HapticFeedback.mediumImpact();
+    final inv = context.read<InventoryProvider>();
+    final result = await inv.recordTapSale(d.dish);
+    if (!mounted || result == null) return;
+    final (txnId, margin) = result;
+    await _refreshToday();
+    if (!mounted) return;
+    showAutoDismissSnackBar(
+      ScaffoldMessenger.of(context),
+      message:
+          '+${formatCurrency(margin)} profit · Today ${formatCurrency(_today?['profit'] ?? margin)}',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          await context.read<InventoryProvider>().deleteTapSale(txnId);
+          _refreshToday();
+        },
+      ),
+    );
+  }
 }
 
 class _TodayStrip extends StatelessWidget {
   final Map<String, double>? today;
-  final int goal;
+  final VoidCallback onUndo;
+  final VoidCallback onReset;
+  final VoidCallback? onEndDay;
 
-  const _TodayStrip({required this.today, required this.goal});
+  const _TodayStrip({
+    required this.today,
+    required this.onUndo,
+    required this.onReset,
+    this.onEndDay,
+  });
 
   @override
   Widget build(BuildContext context) {
     final sales = today?['sales'] ?? 0;
     final profit = today?['profit'] ?? 0;
     final plates = (today?['plates'] ?? 0).toInt();
-    final passed = profit >= goal && goal > 0;
-    final progress = goal > 0 ? (profit / goal).clamp(0.0, 1.0) : 0.0;
-    final accent = passed ? Colors.green.shade800 : Colors.teal.shade800;
 
     return Card(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-      color: passed ? Colors.green.shade50 : Colors.teal.shade50,
+      color: Colors.teal.shade50,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('Today',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
+                const SizedBox(width: 8),
+                Text(formatCurrency(profit),
+                    style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.teal.shade900)),
+                const SizedBox(width: 6),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('$plates plates · ${formatCurrency(sales)}',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Undo last tap-sale',
+                  icon: const Icon(Icons.undo, size: 20),
+                  onPressed: onUndo,
+                ),
+                IconButton(
+                  tooltip: 'Reset all taps today',
+                  icon: const Icon(Icons.restart_alt, size: 20),
+                  onPressed: onReset,
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: onEndDay,
+                  icon: const Icon(Icons.nightlight_outlined, size: 16),
+                  label: const Text('End Day'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class RecapCard extends StatelessWidget {
+  final Map<String, dynamic> recap;
+  final VoidCallback onDismiss;
+
+  const RecapCard({super.key, required this.recap, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = (recap['rows'] as List).cast<Map<String, dynamic>>();
+    double sales = 0, profit = 0;
+    int plates = 0;
+    for (final r in rows) {
+      sales += (r['sales'] as num).toDouble();
+      profit += (r['profit'] as num).toDouble();
+      plates += (r['plates'] as int);
+    }
+    final day = recap['day'] as String? ?? '';
+    final shareText = StringBuffer('$day recap\n');
+    for (final r in rows) {
+      shareText.writeln(
+          '${r['name']}: ${r['plates']}x - PHP${(r['sales'] as num).toStringAsFixed(0)}');
+    }
+    shareText.writeln('Total: PHP${sales.toStringAsFixed(0)} / profit PHP${profit.toStringAsFixed(0)}');
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      color: Colors.indigo.shade50,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Text('Today',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-                const Spacer(),
-                if (passed) ...[
-                  const Icon(Icons.check_circle, size: 16, color: Colors.green),
-                  const SizedBox(width: 4),
-                  const Text('Goal passed!',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green)),
-                  const SizedBox(width: 8),
-                ],
-                Text('$plates plates',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(formatCurrency(profit),
-                    style: TextStyle(
-                        fontSize: 26, fontWeight: FontWeight.bold, color: accent)),
-                const SizedBox(width: 6),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('profit · ${formatCurrency(sales)} sales',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-                ),
-                const Spacer(),
-                Text('of ${formatCurrency(goal.toDouble())}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 6,
-                backgroundColor: Colors.grey.shade300,
-                valueColor: AlwaysStoppedAnimation<Color>(accent),
+            Row(children: [
+              const Icon(Icons.history_edu, size: 18, color: Colors.indigo),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text('Yesterday ($day): $plates plates · +PHP${profit.toStringAsFixed(0)} profit',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               ),
-            ),
+            ]),
+            const SizedBox(height: 4),
+            for (final r in rows.take(3))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1),
+                child: Text('${r['plates']}x ${r['name']}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+              ),
+            const SizedBox(height: 6),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton.icon(
+                onPressed: () => Share.share(shareText.toString(), subject: 'TalaKo Day Recap'),
+                icon: const Icon(Icons.share, size: 16),
+                label: const Text('Share'),
+              ),
+              FilledButton.tonal(
+                onPressed: onDismiss,
+                child: const Text('Got it'),
+              ),
+            ]),
           ],
         ),
       ),

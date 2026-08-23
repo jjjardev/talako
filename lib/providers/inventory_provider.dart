@@ -5,6 +5,7 @@ import '../models/customer.dart';
 import '../models/dish.dart';
 import '../models/item.dart';
 import '../models/stock_enums.dart';
+import '../utils/money.dart';
 import '../utils/app_logger.dart';
 
 enum ItemBadge { hot, cooling, cold, fresh }
@@ -345,8 +346,16 @@ class InventoryProvider extends ChangeNotifier {
       final customerId = customer?.id;
       if (customerId == null || dish.id == null) return null;
 
-      final ids = await _db.getDishIngredientIds(dish.id!);
-      final deducted = await _db.demoteFreshIngredients(ids) > 0;
+      // Leftover (already-cooked) plates are consumed before touching
+      // fresh ingredients - no freshness hit for reheated food.
+      final leftover = await _db.getReheatLeftover(dish.id!);
+      var deducted = false;
+      if (leftover > 0) {
+        await _db.consumeReheatLeftover(dish.id!);
+      } else {
+        final ids = await _db.getDishIngredientIds(dish.id!);
+        deducted = await _db.demoteFreshIngredients(ids) > 0;
+      }
 
       final txnId = await _db.insertTransactionWithItems(
         customerId,
@@ -373,6 +382,9 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
+  Future<int> getReheatLeftoverPublic(int dishId) =>
+      _db.getReheatLeftover(dishId);
+
   /// Deletes exactly one tap-sale (Undo). Freshness stays as-is - demotion
   /// is conservative and re-tapping Fresh costs nothing.
   Future<void> deleteTapSale(int transactionId) async {
@@ -393,16 +405,135 @@ class InventoryProvider extends ChangeNotifier {
     return DateTime(now.year, now.month, now.day);
   }
 
-  static const int defaultDailyGoal = 500;
+  // ─── End of Day ─────────────────────────────────────────────────────
 
-  Future<int> dailyGoal() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('daily_profit_goal') ?? defaultDailyGoal;
+  /// Yesterday's recap waiting to be shown, if a day closed unhandled.
+  Map<String, dynamic>? pendingRecap;
+
+  static String dateStr(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  /// Runs on Menu open: if yesterday was never closed out, computes its
+  /// recap and holds it as [pendingRecap] until the UI handles it.
+  Future<void> maybeRunEndOfDay() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final today = dateStr(DateTime.now());
+      final stored = prefs.getString('last_eod_day');
+      if (stored == today) return;
+      if (stored != null) {
+        final recapDay = DateTime.tryParse(stored) ?? DateTime.now();
+        final rows = await _db.getDishRecapForDay(
+          dateStr(recapDay),
+          dateStr(recapDay.add(const Duration(days: 1))),
+        );
+        if (rows.isNotEmpty) {
+          pendingRecap = {'day': stored, 'rows': rows};
+        }
+      }
+      await prefs.setString('last_eod_day', today);
+    } catch (e, s) {
+      logError('eod-auto', e, s);
+    }
   }
 
-  Future<void> setDailyGoal(int goal) async {
+  /// Manual close-out: today-so-far recap + leftover prompts + marks day.
+  Future<Map<String, dynamic>> recapForToday() async {
+    final start = DateTime.now();
+    final dayStart = DateTime(start.year, start.month, start.day);
+    final rows = await _db.getDishRecapForDay(
+        dayStart.toIso8601String(), start.toIso8601String());
+    return {'day': dateStr(start), 'rows': rows};
+  }
+
+  Future<void> markDayClosed() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('daily_profit_goal', goal);
+    await prefs.setString('last_eod_day', dateStr(DateTime.now()));
+    pendingRecap = null;
+    notifyListeners();
+  }
+
+  /// Records leftovers chosen in the close-out sheet.
+  Future<void> saveLeftovers(
+      List<({int dishId, int qty, String disposition})> entries) async {
+    final day = dateStr(DateTime.now());
+    for (final e in entries) {
+      if (e.qty <= 0) continue;
+      try {
+        await _db.addLeftover(e.dishId, e.qty, e.disposition, day);
+        if (e.disposition == 'ingredients') {
+          await _ensureLeftoverIngredient(e.dishId);
+        } else if (e.disposition == 'spoiled') {
+          final dish = dishByIdOf(e.dishId);
+          if (dish != null) {
+            await _db.insertSpoilage(SpoilageEntry(
+              itemId: dish.id!,
+              estimatedValue: roundMoney(dish.capital * e.qty),
+              note: 'Unsold ${dish.name} (${dateStr(DateTime.now())})',
+              date: DateTime.now().toIso8601String(),
+            ));
+          }
+        }
+      } catch (err, st) {
+        logError('save-leftovers', err, st);
+      }
+    }
+    await loadInventory();
+  }
+
+  Dish? dishByIdOf(int id) {
+    for (final d in dishes) {
+      if (d.dish.id == id) return d.dish;
+    }
+    return null;
+  }
+
+  Future<void> _ensureLeftoverIngredient(int dishId) async {
+    final dish = dishByIdOf(dishId);
+    if (dish == null) return;
+    final name = 'Leftover: ${dish.name}';
+    var item = await _db.getItemByName(name);
+    if (item == null) {
+      await _db.insertItem(Item(
+        name: name,
+        price: 0,
+        usageType: UsageType.ingredientOnly,
+        freshnessStatus: FreshnessStatus.useSoon,
+        notes: 'Auto-created from unsold plates',
+      ));
+    } else {
+      await _db.updateItemFreshness(item.id!, FreshnessStatus.useSoon.dbValue);
+    }
+  }
+
+  /// Undo button on the strip: deletes the most recent cash tap today
+  /// (falls back to a query after app restarts).
+  Future<bool> undoLastTapSale() async {
+    try {
+      final id = await _db.getLastTodayTapSaleId(_startOfToday().toIso8601String());
+      if (id == null) return false;
+      await _db.deleteTransaction(id);
+      await loadInventory();
+      return true;
+    } catch (e, s) {
+      logError('undo-last-tap', e, s);
+      return false;
+    }
+  }
+
+  /// Misclick protection: wipes ALL of today's cash tap-sales. Credit
+  /// receipts are structurally untouched.
+  Future<int> resetTodayTaps() async {
+    try {
+      final n = await _db.deleteTodayTapSales(_startOfToday().toIso8601String());
+      await loadInventory();
+      return n;
+    } catch (e, s) {
+      logError('reset-taps', e, s);
+      return 0;
+    }
   }
 
   // ─── Spoilage ──────────────────────────────────────────────────────

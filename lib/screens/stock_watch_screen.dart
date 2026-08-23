@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/item.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
+import '../widgets/alphabet_strip.dart';
 
 class StockWatchScreen extends StatefulWidget {
   const StockWatchScreen({super.key});
@@ -12,6 +13,14 @@ class StockWatchScreen extends StatefulWidget {
 }
 
 class _StockWatchScreenState extends State<StockWatchScreen> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -56,18 +65,64 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                   ? _emptyState(inv)
                   : RefreshIndicator(
                       onRefresh: () => inv.loadInventory(),
-                      child: GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(10, 4, 10, 90),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 180,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 0.92,
-                        ),
-                        itemCount: items.length,
-                        itemBuilder: (context, i) =>
-                            _ItemCard(item: items[i], onEdit: () => _openEditor(context, items[i])),
+                      child: LayoutBuilder(
+                        builder: (context, cons) {
+                          final sorted = [...items]
+                            ..sort((a, b) => a.name
+                                .toLowerCase()
+                                .compareTo(b.name.toLowerCase()));
+                          final offsets =
+                              AlphabetStrip.letterOffsets(sorted.map((i) => i.name).toList());
+                          return Stack(
+                            children: [
+                              GridView.builder(
+                                controller: _scroll,
+                                padding:
+                                    const EdgeInsets.fromLTRB(10, 4, 30, 90),
+                                gridDelegate:
+                                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 145,
+                                  mainAxisSpacing: 6,
+                                  crossAxisSpacing: 6,
+                                  childAspectRatio: 0.95,
+                                ),
+                                itemCount: sorted.length,
+                                itemBuilder: (context, i) => _ItemCard(
+                                    item: sorted[i],
+                                    onEdit: () =>
+                                        _openEditor(context, sorted[i])),
+                              ),
+                              Positioned(
+                                right: 2,
+                                top: 0,
+                                bottom: 90,
+                                child: Center(
+                                  child: AlphabetStrip(
+                                    letters: offsets.keys.toList(),
+                                    onLetter: (l) {
+                                      final idx = offsets[l]!;
+                                      const extent = 145.0;
+                                      final columns = (cons.maxWidth / extent)
+                                          .floor()
+                                          .clamp(1, 10);
+                                      const spacing = 6.0;
+                                      final cardW = (cons.maxWidth - 40) / columns;
+                                      final rowH = cardW / 0.95 + spacing;
+                                      final row = idx ~/ columns;
+                                      _scroll.animateTo(
+                                        (row * rowH)
+                                            .clamp(0.0, double.maxFinite),
+                                        duration:
+                                            const Duration(milliseconds: 250),
+                                        curve: Curves.easeInOut,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
             ),
@@ -205,6 +260,24 @@ class _ItemCard extends StatelessWidget {
   }
 }
 
+Widget _statusChip(String label, Color color, String hint) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: color),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.circle, size: 9, color: color),
+      const SizedBox(width: 6),
+      Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+      const SizedBox(width: 6),
+      Text(hint, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+    ]),
+  );
+}
+
 class _ItemEditorSheet extends StatefulWidget {
   final Item item;
 
@@ -217,6 +290,8 @@ class _ItemEditorSheet extends StatefulWidget {
 class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late UsageType _usageType = widget.item.usageType;
   late bool _perishable = widget.item.perishable;
+  late StockStatus _stockStatus = widget.item.stockStatus;
+  late FreshnessStatus _freshnessStatus = widget.item.freshnessStatus;
   late final TextEditingController _notes =
       TextEditingController(text: widget.item.notes ?? '');
   late final TextEditingController _price =
@@ -235,6 +310,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           price: price <= 0 ? null : price,
           usageType: _usageType,
           perishable: _perishable || _usageType == UsageType.ingredientOnly,
+          stockStatus: _stockStatus,
+          freshnessStatus: _freshnessStatus,
           notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           clearNotes: _notes.text.trim().isEmpty,
         ));
@@ -277,17 +354,26 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           children: [
             Text(widget.item.name,
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _price,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Price (₱)',
-                prefixText: '₱ ',
-                border: OutlineInputBorder(),
-                isDense: true,
+            if (_usageType == UsageType.ingredientOnly) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('Not sold directly - no selling price needed.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
               ),
-            ),
+            ] else ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _price,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Selling Price (₱)',
+                  prefixText: '₱ ',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             SegmentedButton<UsageType>(
               segments: const [
@@ -309,6 +395,35 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 value: _perishable,
                 onChanged: (v) => setState(() => _perishable = v),
               ),
+            const SizedBox(height: 6),
+            Row(children: [
+              const SizedBox(
+                  width: 92,
+                  child: Text('Shelf:', style: TextStyle(fontSize: 13))),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () =>
+                      setState(() => _stockStatus = _stockStatus.next()),
+                  child: _statusChip(_stockStatus.label, _stockStatus.color,
+                      'tap to change'),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 6),
+            Row(children: [
+              const SizedBox(
+                  width: 92,
+                  child: Text('Fresh:', style: TextStyle(fontSize: 13))),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(
+                      () => _freshnessStatus = _freshnessStatus.next()),
+                  child: _statusChip(_freshnessStatus.label,
+                      _freshnessStatus.color, 'tap to change'),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
             TextField(
               controller: _notes,
               maxLines: 2,

@@ -32,9 +32,9 @@ class _AddItemSheetState extends State<AddItemSheet> {
           const SnackBar(content: Text('Enter item name')));
       return;
     }
-    if (price <= 0) {
+    if (_usageType != UsageType.ingredientOnly && price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a price above 0')));
+          const SnackBar(content: Text('Enter a selling price above 0')));
       return;
     }
     setState(() => _saving = true);
@@ -86,18 +86,25 @@ class _AddItemSheetState extends State<AddItemSheet> {
               border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _priceController,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Price (₱)',
-              prefixText: '₱ ',
-              border: OutlineInputBorder(),
+          if (_usageType != UsageType.ingredientOnly) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _priceController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Selling Price (₱)',
+                prefixText: '₱ ',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ] else ...[
+            const SizedBox(height: 4),
+            Text('Not sold directly - no selling price needed.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+            const SizedBox(height: 8),
+          ],
           SegmentedButton<UsageType>(
             segments: const [
               ButtonSegment(value: UsageType.retailOnly, label: Text('Retail')),

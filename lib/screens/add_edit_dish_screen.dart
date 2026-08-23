@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/dish.dart';
 import '../models/stock_enums.dart';
+import '../widgets/alphabet_strip.dart';
 import '../providers/inventory_provider.dart';
 
 class AddEditDishScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class AddEditDishScreen extends StatefulWidget {
 
 class _AddEditDishScreenState extends State<AddEditDishScreen> {
   final _formKey = GlobalKey<FormState>();
+  final ScrollController _pickerScroll = ScrollController();
   late final TextEditingController _name =
       TextEditingController(text: widget.existing?.dish.name ?? '');
   late final TextEditingController _price = TextEditingController(
@@ -25,36 +27,14 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
           : widget.existing!.dish.capital.toString());
   late final Set<int> _ingredientIds =
       widget.existing?.ingredients.map((i) => i.itemId).toSet() ?? <int>{};
-  List<String> _suggestions = [];
-  bool _hasIngredientItems = true;
   bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSuggestions());
-  }
-
-  Future<void> _loadSuggestions() async {
-    final inv = context.read<InventoryProvider>();
-    // Dishes are cooked from ingredients: only Ingredient/Both items qualify.
-    final names = inv.items
-        .where((i) => i.isIngredient)
-        .map((i) => i.name)
-        .toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    if (!mounted) return;
-    setState(() {
-      _suggestions = names;
-      _hasIngredientItems = _suggestions.isNotEmpty;
-    });
-  }
 
   @override
   void dispose() {
     _name.dispose();
     _price.dispose();
     _capital.dispose();
+    _pickerScroll.dispose();
     super.dispose();
   }
 
@@ -128,7 +108,7 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
               controller: _price,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Price (₱)',
+                labelText: 'Selling Price (₱)',
                 prefixText: '₱ ',
                 border: OutlineInputBorder(),
               ),
@@ -143,7 +123,7 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
               controller: _capital,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Capital / Puhunan per plate (₱)',
+                labelText: 'Cost / Puhunan per plate (₱)',
                 prefixText: '₱ ',
                 border: OutlineInputBorder(),
                 helperText: 'Your estimated cost - drives the margin shown on every sale',
@@ -164,46 +144,111 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
             Text('This dish is available when no ingredient is Empty / Spoiled.',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
             const SizedBox(height: 8),
-            Autocomplete<String>(
-              optionsBuilder: (v) {
-                if (v.text.isEmpty) return const Iterable.empty();
-                final selectedNames = _ingredientIds
-                    .map((id) => inv.itemById(id)?.name ?? '')
-                    .toSet();
-                return _suggestions.where((s) =>
-                    s.toLowerCase().contains(v.text.toLowerCase()) &&
-                    !selectedNames.contains(s));
-              },
-              fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-                return TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  onSubmitted: (_) => onSubmitted(),
-                  decoration: InputDecoration(
-                    hintText: _hasIngredientItems
-                        ? 'Search ingredients to add...'
-                        : 'No ingredients yet',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
-                    isDense: true,
+            LayoutBuilder(
+              builder: (context, cons) {
+                final available = inv.items.where((i) => i.isIngredient).toList()
+                  ..sort((a, b) =>
+                      a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+                if (available.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'No ingredients yet - mark items as Ingredient or Both first (Shelf tab, long-press an item).',
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                    ),
+                  );
+                }
+                final offsets = AlphabetStrip.letterOffsets(available.map((i) => i.name).toList());
+                return SizedBox(
+                  height: 260,
+                  child: Stack(
+                    children: [
+                      GridView.builder(
+                        controller: _pickerScroll,
+                        padding: const EdgeInsets.only(right: 26, top: 2, bottom: 2),
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 150,
+                          mainAxisSpacing: 6,
+                          crossAxisSpacing: 6,
+                          childAspectRatio: 2.6,
+                        ),
+                        itemCount: available.length,
+                        itemBuilder: (context, i) {
+                          final item = available[i];
+                          final selected =
+                              item.id != null && _ingredientIds.contains(item.id);
+                          return InkWell(
+                            onTap: () => setState(() {
+                              selected
+                                  ? _ingredientIds.remove(item.id)
+                                  : _ingredientIds.add(item.id!);
+                            }),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: selected
+                                      ? Colors.teal
+                                      : Colors.grey.shade400,
+                                  width: selected ? 2 : 1,
+                                ),
+                                color: selected
+                                    ? Colors.teal.withValues(alpha: 0.12)
+                                    : null,
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.circle,
+                                      size: 8, color: item.freshnessStatus.color),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(item.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 13)),
+                                  ),
+                                  if (selected)
+                                    const Icon(Icons.check_circle,
+                                        size: 16, color: Colors.teal),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: AlphabetStrip(
+                            letters: offsets.keys.toList(),
+                            onLetter: (l) {
+                              final idx = offsets[l]!;
+                              const extent = 150.0;
+                              final columns =
+                                  ((cons.maxWidth - 26) / extent).floor().clamp(1, 10);
+                              final cardH =
+                                  ((cons.maxWidth - 26) / columns) / 2.6 + 6.0;
+                              final rowIdx = idx ~/ columns;
+                              _pickerScroll.animateTo(
+                                (rowIdx * cardH).clamp(0.0, double.maxFinite),
+                                duration: const Duration(milliseconds: 250),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
-              onSelected: (selected) {
-                final matches = inv.items
-                    .where((i) => i.name.toLowerCase() == selected.toLowerCase());
-                if (matches.isEmpty || matches.first.id == null) return;
-                setState(() => _ingredientIds.add(matches.first.id!));
-              },
             ),
-            if (!_hasIngredientItems)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Mark items as Ingredient or Both first (Shelf tab, long-press an item).',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                ),
-              ),
             const SizedBox(height: 8),
             for (final id in _ingredientIds)
               if (inv.itemById(id) != null)

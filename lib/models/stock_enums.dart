@@ -103,6 +103,15 @@ extension FreshnessStatusX on FreshnessStatus {
       .firstWhere((f) => f.dbValue == value, orElse: () => FreshnessStatus.fresh);
 }
 
+/// What happens to unsold cooked plates at end of day.
+enum LeftoverDisposition {
+  reheat,
+  ingredients,
+  spoiled;
+
+  String get dbValue => name;
+}
+
 /// Derived, never stored.
 enum DishAvailability { available, limited, unavailable }
 

@@ -2,14 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talako/database/database_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:talako/models/customer.dart';
 import 'package:talako/models/dish.dart';
+import 'package:talako/models/item.dart';
 import 'package:talako/models/stock_enums.dart';
+import 'package:talako/widgets/alphabet_strip.dart';
 import 'package:talako/providers/inventory_provider.dart';
 import 'package:talako/providers/transactions_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
 
   setUpAll(() async {
     sqfliteFfiInit();
@@ -169,6 +173,106 @@ void main() {
       expect(d.availability, DishAvailability.unavailable);
     });
   });
+group('end of day', () {
+  test('reheat leftovers are consumed before touching fresh ingredients',
+      () async {
+    final db = DatabaseHelper.instance;
+    final inv = InventoryProvider();
+
+    final eggId = await db.insertItem(Item(
+        name: 'EOL Egg', price: 0, usageType: UsageType.ingredientOnly));
+    final dishId = await db.insertDish(
+        Dish(name: 'EOL Adobo', price: 60, capital: 30));
+    await db.setDishIngredients(dishId, [eggId]);
+
+    // Yesterday's unsold plate marked for reheat.
+    await db.addLeftover(dishId, 1, 'reheat', '2026-01-01');
+
+    // First sale consumes the leftover - freshness untouched.
+    final r1 = await inv.recordTapSale((await db.getAllDishes()).firstWhere((d) => d.id == dishId));
+    expect(r1, isNotNull);
+    var egg = (await db.getAllItems()).firstWhere((i) => i.id == eggId);
+    expect(egg.freshnessStatus, FreshnessStatus.fresh,
+        reason: 'leftover was consumed instead');
+    expect(await inv.getReheatLeftoverPublic(dishId), 0);
+
+    // Second sale has no leftover left -> fresh demotes.
+    await inv.recordTapSale((await db.getAllDishes()).firstWhere((d) => d.id == dishId));
+    egg = (await db.getAllItems()).firstWhere((i) => i.id == eggId);
+    expect(egg.freshnessStatus, FreshnessStatus.useSoon);
+  });
+
+  test('dispositions: ingredient pseudo-item + spoiled->spoilage log',
+      () async {
+    final db = DatabaseHelper.instance;
+    final inv = InventoryProvider();
+    await inv.loadInventory();
+    final dish = inv.dishes.firstWhere((d) => d.dish.name == 'EOL Adobo').dish;
+
+    await inv.saveLeftovers([
+      (dishId: dish.id!, qty: 2, disposition: 'ingredients'),
+      (dishId: dish.id!, qty: 1, disposition: 'spoiled'),
+    ]);
+
+    final pseudo = await db.getItemByName('Leftover: EOL Adobo');
+    expect(pseudo, isNotNull,
+        reason: 'ingredient conversion creates a usable pseudo-item');
+    expect(pseudo!.usageType, UsageType.ingredientOnly);
+
+    final monthStart =
+        DateTime(DateTime.now().year, DateTime.now().month).toIso8601String();
+    final spoilage = await db.spoilageTotalSince(monthStart);
+    expect(spoilage, greaterThanOrEqualTo(30.0),
+        reason: 'waste valued at capital x qty');
+  });
+
+  test('resetTodayTaps deletes cash only; credit receipts survive', () async {
+    final db = DatabaseHelper.instance;
+    final inv = InventoryProvider();
+    final txnProvider = TransactionsProvider();
+    await inv.loadInventory();
+    final dish = inv.dishes.firstWhere((d) => d.dish.name == 'Tapsilog').dish;
+
+    await inv.recordTapSale(dish);
+    final customerId = await db.insertCustomer(Customer(name: 'Reset Cust'));
+    final creditTxn = await txnProvider.addDishTransaction(customerId,
+        ['Tapsilog'], [1], [75], dish: dish);
+
+    final removed = await inv.resetTodayTaps();
+    expect(removed, greaterThanOrEqualTo(1));
+
+    final creditRow = (await (await db.database)
+        .query('transactions', where: 'id = ?', whereArgs: [creditTxn]));
+    expect(creditRow, isNotEmpty,
+        reason: 'customer receipts are structurally safe from Reset');
+  });
+
+  test('undoLastTapSale works without in-memory history', () async {
+    final inv = InventoryProvider();
+    await inv.loadInventory();
+    final dish = inv.dishes.firstWhere((d) => d.dish.name == 'Tapsilog').dish;
+    await inv.recordTapSale(dish);
+    final before = await inv.todaySummary();
+
+    final ok = await inv.undoLastTapSale();
+    expect(ok, isTrue, reason: 'falls back to querying the latest tap');
+    final after = await inv.todaySummary();
+    expect(after['plates']!, lessThan(before['plates']! + 1));
+  });
+});
+
+group('alphabet index', () {
+  test('letterOffsets maps first occurrence and buckets symbols', () {
+    final offsets = AlphabetStrip.letterOffsets(
+        ['banana', 'Apple', 'chips', 'avocado', '1sachet']);
+    expect(offsets['A'], 1);
+    expect(offsets['B'], 0);
+    expect(offsets['C'], 2);
+    expect(offsets['#'], 4);
+    expect(offsets.containsKey('D'), isFalse);
+  });
+});
+
 }
 
 /// Tables a v3 install already had besides `dishes`.
@@ -239,3 +343,4 @@ Future<void> legacyTables(dynamic db) async {
     )
   ''');
 }
+

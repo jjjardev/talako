@@ -29,7 +29,7 @@ class DatabaseHelper {
     final path = join(dbPath, fileName);
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onConfigure: _configureDB,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -125,6 +125,16 @@ class DatabaseHelper {
         date TEXT NOT NULL
       )
     ''');
+    await db.execute('''
+      CREATE TABLE dish_leftovers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dish_id INTEGER NOT NULL,
+        qty INTEGER NOT NULL DEFAULT 0,
+        disposition TEXT NOT NULL,
+        day TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -187,7 +197,7 @@ class DatabaseHelper {
       await _createInventoryTables(db);
     }
     if (oldVersion < 4) {
-      // Idempotent: some paths above already create current-shape tables.
+      // Real v3 installs carry pre-v4 shapes; guarded ALTERs are idempotent.
       await _ensureColumn(db, 'dishes', 'capital', 'REAL NOT NULL DEFAULT 0');
       await _ensureColumn(db, 'transaction_items', 'dish_id', 'INTEGER');
       await _ensureColumn(
@@ -197,7 +207,20 @@ class DatabaseHelper {
       await _ensureColumn(db,
           'transactions', 'deducted_ingredients', 'INTEGER NOT NULL DEFAULT 0');
     }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS dish_leftovers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          dish_id INTEGER NOT NULL,
+          qty INTEGER NOT NULL DEFAULT 0,
+          disposition TEXT NOT NULL,
+          day TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
   }
+
 
   /// Adds [name] to [table] only when missing - safe against partially
   /// upgraded databases and double-running migration blocks.
@@ -750,6 +773,103 @@ class DatabaseHelper {
     return (result.first['total'] as num).toDouble();
   }
 
+  // ─── End of Day: leftovers, recap, tap resets ──────────────────────
+
+  /// Remaining reheat-plates for a dish (any past day, unconsumed).
+  Future<int> getReheatLeftover(int dishId) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      "SELECT COALESCE(SUM(qty), 0) AS total FROM dish_leftovers "
+      "WHERE dish_id = ? AND disposition = 'reheat'",
+      [dishId],
+    );
+    return (result.first['total'] as int?) ?? 0;
+  }
+
+  /// Consumes one reheat plate - newest batch first. Returns remaining.
+  Future<int> consumeReheatLeftover(int dishId) async {
+    final db = await database;
+    final rows = await db.query('dish_leftovers',
+        where: "dish_id = ? AND disposition = 'reheat' AND qty > 0",
+        whereArgs: [dishId],
+        orderBy: 'created_at DESC',
+        limit: 1);
+    if (rows.isEmpty) return 0;
+    final row = rows.first;
+    final qty = row['qty'] as int;
+    if (qty <= 1) {
+      await db.delete('dish_leftovers', where: 'id = ?', whereArgs: [row['id']]);
+      return 0;
+    }
+    await db.update('dish_leftovers', {'qty': qty - 1},
+        where: 'id = ?', whereArgs: [row['id']]);
+    return qty - 1;
+  }
+
+  /// Records end-of-day leftovers for a dish.
+  Future<void> addLeftover(
+      int dishId, int qty, String disposition, String day) async {
+    if (qty <= 0) return;
+    final db = await database;
+    await db.insert('dish_leftovers', {
+      'dish_id': dishId,
+      'qty': qty,
+      'disposition': disposition,
+      'day': day,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Per-dish sales breakdown for one calendar day ([dayStart] inclusive,
+  /// [dayEnd] exclusive).
+  Future<List<Map<String, dynamic>>> getDishRecapForDay(
+      String dayStart, String dayEnd) async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT ti.dish_id AS dish_id, d.name AS name, d.price AS price,
+        COUNT(*) AS plates,
+        COALESCE(SUM(ti.price), 0) AS sales,
+        COALESCE(SUM((ti.price - ti.unit_capital) * 1), 0) AS profit
+      FROM transaction_items ti
+      INNER JOIN transactions t ON t.id = ti.transaction_id
+      INNER JOIN dishes d ON d.id = ti.dish_id
+      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0
+        AND t.date >= ? AND t.date < ?
+      GROUP BY ti.dish_id
+      ORDER BY plates DESC
+    ''', [dayStart, dayEnd]);
+  }
+
+  /// Deletes today's cash tap-sales only. Credit receipts are structurally
+  /// untouched. Returns rows removed.
+  Future<int> deleteTodayTapSales(String dayStart) async {
+    final db = await database;
+    return await db.transaction((txn) async {
+      final rows = await txn.rawQuery('''
+        SELECT id FROM transactions
+        WHERE is_cash_sale = 1 AND date >= ?
+      ''', [dayStart]);
+      for (final r in rows) {
+        await txn.delete('transaction_items',
+            where: 'transaction_id = ?', whereArgs: [r['id']]);
+        await txn.delete('transactions', where: 'id = ?', whereArgs: [r['id']]);
+      }
+      return rows.length;
+    });
+  }
+
+  /// Most recent cash tap today - powers the Undo button after restarts.
+  Future<int?> getLastTodayTapSaleId(String dayStart) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT id FROM transactions
+      WHERE is_cash_sale = 1 AND date >= ?
+      ORDER BY date DESC LIMIT 1
+    ''', [dayStart]);
+    if (rows.isEmpty) return null;
+    return rows.first['id'] as int;
+  }
+
   // ─── Owner Consumption & Sales Intelligence ─────────────────────────
 
   Future<List<Map<String, dynamic>>> getOwnerConsumptionLog({int limit = 200}) async {
@@ -901,9 +1021,10 @@ class DatabaseHelper {
     final dishes = await db.query('dishes');
     final dishIngredients = await db.query('dish_ingredients');
     final spoilageLog = await db.query('spoilage_log');
+    final dishLeftovers = await db.query('dish_leftovers');
     return {
       'app': 'TalaKo',
-      'version': 3,
+      'version': 4,
       'exported_at': DateTime.now().toIso8601String(),
       'items': items,
       'customers': customers,
@@ -912,6 +1033,7 @@ class DatabaseHelper {
       'dishes': dishes,
       'dish_ingredients': dishIngredients,
       'spoilage_log': spoilageLog,
+      'dish_leftovers': dishLeftovers,
     };
   }
 
@@ -921,6 +1043,7 @@ class DatabaseHelper {
     }
     final db = await database;
     await db.transaction((txn) async {
+      await txn.delete('dish_leftovers');
       await txn.delete('spoilage_log');
       await txn.delete('dish_ingredients');
       await txn.delete('dishes');
@@ -958,6 +1081,11 @@ class DatabaseHelper {
       if (data.containsKey('spoilage_log')) {
         for (final entry in (data['spoilage_log'] as List)) {
           await txn.insert('spoilage_log', entry as Map<String, dynamic>);
+        }
+      }
+      if (data.containsKey('dish_leftovers')) {
+        for (final entry in (data['dish_leftovers'] as List)) {
+          await txn.insert('dish_leftovers', entry as Map<String, dynamic>);
         }
       }
     });
