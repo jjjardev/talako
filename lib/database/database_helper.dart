@@ -617,7 +617,7 @@ class DatabaseHelper {
         'is_owner_consumption': isOwnerConsumption ? 1 : 0,
         'is_cash_sale': isCashSale ? 1 : 0,
         'deducted_ingredients': deductedIngredients ? 1 : 0,
-        'dish_id': ?dishId,
+        if (dishId != null) 'dish_id': dishId,
       });
       for (final item in items) {
         await txn.insert('transaction_items', {
@@ -626,7 +626,7 @@ class DatabaseHelper {
           'quantity': item['quantity'],
           'price': item['price'],
           'subtotal': roundMoney((item['subtotal'] as num).toDouble()),
-          'dish_id': ?item['dish_id'],
+          if (item['dish_id'] != null) 'dish_id': item['dish_id'],
           'unit_capital': (item['unit_capital'] as num?)?.toDouble() ?? 0,
         });
       }
