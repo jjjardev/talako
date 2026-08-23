@@ -228,15 +228,19 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                           child: AlphabetStrip(
                             letters: offsets.keys.toList(),
                             onLetter: (l) {
-                              final idx = offsets[l]!;
-                              const extent = 150.0;
-                              final columns =
-                                  ((cons.maxWidth - 26) / extent).floor().clamp(1, 10);
-                              final cardH =
-                                  ((cons.maxWidth - 26) / columns) / 2.6 + 6.0;
-                              final rowIdx = idx ~/ columns;
+                              final target = AlphabetStrip.gridScrollOffsetFor(
+                                itemIndex: offsets[l]!,
+                                availableWidth: cons.maxWidth,
+                                horizontalPadding: 26,
+                                maxCrossAxisExtent: 150,
+                                crossAxisSpacing: 6,
+                                mainAxisSpacing: 6,
+                                childAspectRatio: 2.6,
+                                leadingVerticalInset: 2,
+                              );
                               _pickerScroll.animateTo(
-                                (rowIdx * cardH).clamp(0.0, double.maxFinite),
+                                target.clamp(0.0,
+                                    _pickerScroll.position.maxScrollExtent),
                                 duration: const Duration(milliseconds: 250),
                                 curve: Curves.easeInOut,
                               );

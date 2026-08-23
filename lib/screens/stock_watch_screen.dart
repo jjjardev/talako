@@ -100,18 +100,20 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                                   child: AlphabetStrip(
                                     letters: offsets.keys.toList(),
                                     onLetter: (l) {
-                                      final idx = offsets[l]!;
-                                      const extent = 145.0;
-                                      final columns = (cons.maxWidth / extent)
-                                          .floor()
-                                          .clamp(1, 10);
-                                      const spacing = 6.0;
-                                      final cardW = (cons.maxWidth - 40) / columns;
-                                      final rowH = cardW / 0.95 + spacing;
-                                      final row = idx ~/ columns;
+                                      final target = AlphabetStrip
+                                          .gridScrollOffsetFor(
+                                        itemIndex: offsets[l]!,
+                                        availableWidth: cons.maxWidth,
+                                        horizontalPadding: 40,
+                                        maxCrossAxisExtent: 145,
+                                        crossAxisSpacing: 6,
+                                        mainAxisSpacing: 6,
+                                        childAspectRatio: 0.95,
+                                        leadingVerticalInset: 4,
+                                      );
                                       _scroll.animateTo(
-                                        (row * rowH)
-                                            .clamp(0.0, double.maxFinite),
+                                        target.clamp(0.0,
+                                            _scroll.position.maxScrollExtent),
                                         duration:
                                             const Duration(milliseconds: 250),
                                         curve: Curves.easeInOut,

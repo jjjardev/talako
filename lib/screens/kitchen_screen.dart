@@ -188,14 +188,18 @@ class _IngredientsTabState extends State<_IngredientsTab> {
           child: AlphabetStrip(
             letters: offsets.keys.toList(),
             onLetter: (l) {
-              final idx = offsets[l]!;
-              const extent = 145.0;
-              final columns = (cons.maxWidth / extent).floor().clamp(1, 10);
-              final cardW = (cons.maxWidth - 40) / columns;
-              final rowH = cardW / 1.05 + 8.0;
-              final row = idx ~/ columns;
+              final target = AlphabetStrip.gridScrollOffsetFor(
+                itemIndex: offsets[l]!,
+                availableWidth: cons.maxWidth,
+                horizontalPadding: 40,
+                maxCrossAxisExtent: 145,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 1.05,
+                leadingVerticalInset: 8,
+              );
               _scroll.animateTo(
-                (row * rowH).clamp(0.0, double.maxFinite),
+                target.clamp(0.0, _scroll.position.maxScrollExtent),
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,
               );
@@ -288,6 +292,24 @@ class _MenuTabState extends State<_MenuTab> {
   }
 
   Future<void> _openCloseOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('End this day?'),
+        content: const Text(
+            'This shows your sales recap and asks about leftover cooked '
+            'plates. You can still use the app afterwards.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, end day'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -437,11 +459,13 @@ class _TodayStrip extends StatelessWidget {
                 const Spacer(),
                 IconButton(
                   tooltip: 'Undo last tap-sale',
+                  style: IconButton.styleFrom(foregroundColor: Colors.teal.shade800),
                   icon: const Icon(Icons.undo, size: 20),
                   onPressed: onUndo,
                 ),
                 IconButton(
                   tooltip: 'Reset all taps today',
+                  style: IconButton.styleFrom(foregroundColor: Colors.red.shade700),
                   icon: const Icon(Icons.restart_alt, size: 20),
                   onPressed: onReset,
                 ),
@@ -452,6 +476,8 @@ class _TodayStrip extends StatelessWidget {
               children: [
                 TextButton.icon(
                   onPressed: onEndDay,
+                  style: TextButton.styleFrom(
+                      foregroundColor: Colors.teal.shade800),
                   icon: const Icon(Icons.nightlight_outlined, size: 16),
                   label: const Text('End Day'),
                 ),

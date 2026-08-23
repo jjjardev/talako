@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
 /// Contacts-style A-Z index strip. Renders only the letters that exist.
-/// Tap or drag along the strip; the parent decides where to scroll.
+///
+/// Uses raw [Listener] pointer events on purpose: a normal vertical-drag
+/// GestureDetector loses the gesture arena to ancestor scrollers /
+/// RefreshIndicators, which made this strip feel dead. Pointer events
+/// always arrive regardless of the arena.
 class AlphabetStrip extends StatefulWidget {
   final List<String> letters;
   final ValueChanged<String> onLetter;
@@ -29,6 +33,30 @@ class AlphabetStrip extends StatefulWidget {
     return {for (final l in sorted) l: map[l]!};
   }
 
+  /// Pixel offset that puts the row containing [itemIndex] at the top of a
+  /// SliverGridDelegateWithMaxCrossAxisExtent grid. Must mirror the exact
+  /// padding/spacing values used by the grid.
+  static double gridScrollOffsetFor({
+    required int itemIndex,
+    required double availableWidth,
+    required double horizontalPadding,
+    required double maxCrossAxisExtent,
+    required double crossAxisSpacing,
+    required double mainAxisSpacing,
+    required double childAspectRatio,
+    double leadingVerticalInset = 0,
+  }) {
+    final inner =
+        (availableWidth - horizontalPadding).clamp(1.0, double.infinity);
+    final columns = (inner / maxCrossAxisExtent).floor().clamp(1, 100);
+    final cardWidth = inner / columns;
+    final cardHeight = cardWidth / childAspectRatio;
+    final row = itemIndex ~/ columns;
+    return leadingVerticalInset +
+        row * (cardHeight + mainAxisSpacing) -
+        crossAxisSpacing.clamp(0.0, crossAxisSpacing);
+  }
+
   @override
   State<AlphabetStrip> createState() => _AlphabetStripState();
 }
@@ -37,7 +65,8 @@ class _AlphabetStripState extends State<AlphabetStrip> {
   String? _active;
 
   void _handle(Offset local) {
-    final height = context.size?.height ?? 0;
+    final box = context.findRenderObject() as RenderBox?;
+    final height = box?.size.height ?? 0;
     if (widget.letters.isEmpty || height <= 0) return;
     final slot = (local.dy / height * widget.letters.length).floor();
     final i = slot.clamp(0, widget.letters.length - 1);
@@ -50,14 +79,12 @@ class _AlphabetStripState extends State<AlphabetStrip> {
   @override
   Widget build(BuildContext context) {
     if (widget.letters.length < 2) return const SizedBox.shrink();
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.opaque,
-      onTapDown: (d) => _handle(d.localPosition),
-      onVerticalDragStart: (d) => _handle(d.localPosition),
-      onVerticalDragUpdate: (d) => _handle(d.localPosition),
-      onVerticalDragEnd: (_) => setState(() => _active = null),
-      onTapUp: (_) => setState(() => _active = null),
-      onPanCancel: () => setState(() => _active = null),
+      onPointerDown: (d) => _handle(d.localPosition),
+      onPointerMove: (d) => _handle(d.localPosition),
+      onPointerUp: (_) => setState(() => _active = null),
+      onPointerCancel: (_) => setState(() => _active = null),
       child: Container(
         width: 22,
         alignment: Alignment.center,
