@@ -424,13 +424,20 @@ class InventoryProvider extends ChangeNotifier {
       final stored = prefs.getString('last_eod_day');
       if (stored == today) return;
       if (stored != null) {
-        final recapDay = DateTime.tryParse(stored) ?? DateTime.now();
+        // Owner may not have opened the app for days - roll every unclosed
+        // day into one combined recap (stored day through yesterday).
+        final startDay = DateTime.tryParse(stored) ?? DateTime.now();
+        final endDay = DateTime.now().subtract(const Duration(days: 1));
         final rows = await _db.getDishRecapForDay(
-          dateStr(recapDay),
-          dateStr(recapDay.add(const Duration(days: 1))),
+          dateStr(startDay),
+          dateStr(endDay.add(const Duration(days: 1))),
         );
         if (rows.isNotEmpty) {
-          pendingRecap = {'day': stored, 'rows': rows};
+          pendingRecap = {
+            'day': dateStr(startDay),
+            'rangeEnd': dateStr(endDay),
+            'rows': rows,
+          };
         }
       }
       await prefs.setString('last_eod_day', today);

@@ -507,7 +507,10 @@ class RecapCard extends StatelessWidget {
       plates += (r['plates'] as int);
     }
     final day = recap['day'] as String? ?? '';
-    final shareText = StringBuffer('$day recap\n');
+    final rangeEnd = recap['rangeEnd'] as String?;
+    final label =
+        (rangeEnd != null && rangeEnd != day) ? '$day to $rangeEnd' : day;
+    final shareText = StringBuffer('$label recap\n');
     for (final r in rows) {
       shareText.writeln(
           '${r['name']}: ${r['plates']}x - PHP${(r['sales'] as num).toStringAsFixed(0)}');
@@ -526,8 +529,11 @@ class RecapCard extends StatelessWidget {
               const Icon(Icons.history_edu, size: 18, color: Colors.indigo),
               const SizedBox(width: 6),
               Expanded(
-                child: Text('Yesterday ($day): $plates plates · +PHP${profit.toStringAsFixed(0)} profit',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text('$label: $plates plates · +PHP${profit.toStringAsFixed(0)} profit',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.indigo.shade900)),
               ),
             ]),
             const SizedBox(height: 4),

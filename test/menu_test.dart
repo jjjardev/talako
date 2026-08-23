@@ -87,6 +87,8 @@ void main() {
       expect(bookRows.any((r) => r['id'] == txnId), isFalse);
 
       // But counted in the Menu summary.
+      // ignore: avoid_print
+      print('CHK tap-sale: dishes=${(await db.getAllDishes()).length}');
       final today = await inv.todaySummary();
       expect(today['sales'], 75.0);
       expect(today['profit'], 33.0);
@@ -245,6 +247,72 @@ group('end of day', () {
         .query('transactions', where: 'id = ?', whereArgs: [creditTxn]));
     expect(creditRow, isNotEmpty,
         reason: 'customer receipts are structurally safe from Reset');
+  });
+
+  test('maybeRunEndOfDay rolls unclosed gap days into one recap', () async {
+    final db = DatabaseHelper.instance;
+    final inv = InventoryProvider();
+
+    // Simulate: last closed 3 days ago, sale happened 2 days ago.
+    final threeDaysAgo =
+        DateTime.now().subtract(const Duration(days: 3));
+    final twoDaysAgo = DateTime.now().subtract(const Duration(days: 2));
+    final customerId = await db.insertCustomer(Customer(name: 'Gap Cust'));
+    final all = await db.getAllDishes();
+    // ignore: avoid_print
+    print('DEBUG dishes=${all.length} path=${await db.getDbFilePath()}');
+    final dish = all.firstWhere(
+      (d) => d.name == 'Tapsilog',
+      orElse: () => throw StateError(
+          'Tapsilog missing; dishes present: ${all.map((d) => d.name).toList()}'),
+    );
+    final txnId = await db.insertTransactionWithItems(customerId, [
+      {
+        'item_name': 'Tapsilog',
+        'quantity': 1,
+        'price': dish.price,
+        'subtotal': dish.price,
+        'dish_id': dish.id,
+        'unit_capital': dish.capital,
+      }
+    ], isCashSale: true, dishId: dish.id);
+    assert(dish.id != null);
+    await (await db.database).update(
+      'transactions',
+      {'date': twoDaysAgo.toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [txnId],
+    );
+    final check = await (await db.database).query('transactions',
+        where: 'id = ?', whereArgs: [txnId]);
+    // ignore: avoid_print
+    print('CHK gap txn: ${check.isNotEmpty ? check.first : 'MISSING'}');
+
+    await SharedPreferences.getInstance().then((p) =>
+        p.setString('last_eod_day', InventoryProvider.dateStr(threeDaysAgo)));
+    // ignore: avoid_print
+    print('CHK stored=${(await SharedPreferences.getInstance()).getString('last_eod_day')}');
+
+    final direct = await db.getDishRecapForDay(
+        InventoryProvider.dateStr(threeDaysAgo), InventoryProvider.dateStr(DateTime.now()));
+    // ignore: avoid_print
+    print('CHK direct=${direct.length} rows=${direct.isNotEmpty ? direct.first : '-'}');
+    await inv.maybeRunEndOfDay();
+    // ignore: avoid_print
+    print('CHK pending=${inv.pendingRecap != null ? inv.pendingRecap!['day'] : 'null'}');
+
+    expect(inv.pendingRecap, isNotNull,
+        reason: 'unclosed days must surface as a recap');
+    expect(inv.pendingRecap!['rangeEnd'], isNotNull,
+        reason: 'multi-day gaps expose an end date');
+    final rows = (inv.pendingRecap!['rows'] as List).cast<Map<String, dynamic>>();
+    expect(rows.any((r) => r['name'] == 'Tapsilog'), isTrue);
+
+    await inv.markDayClosed();
+    expect(inv.pendingRecap, isNull);
+    final stored =
+        await SharedPreferences.getInstance().then((p) => p.getString('last_eod_day'));
+    expect(stored, InventoryProvider.dateStr(DateTime.now()));
   });
 
   test('undoLastTapSale works without in-memory history', () async {

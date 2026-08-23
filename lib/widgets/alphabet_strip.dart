@@ -52,9 +52,8 @@ class AlphabetStrip extends StatefulWidget {
     final cardWidth = inner / columns;
     final cardHeight = cardWidth / childAspectRatio;
     final row = itemIndex ~/ columns;
-    return leadingVerticalInset +
-        row * (cardHeight + mainAxisSpacing) -
-        crossAxisSpacing.clamp(0.0, crossAxisSpacing);
+    // leadingVerticalInset = the grid's top padding (content starts there).
+    return leadingVerticalInset + row * (cardHeight + mainAxisSpacing);
   }
 
   @override
