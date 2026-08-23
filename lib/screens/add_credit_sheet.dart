@@ -29,7 +29,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   Map<String, Dish> _dishesByName = {};
   Map<String, Item> _itemsByLowerName = {};
   final List<_LineItem> _items = [];
-  bool _deductIngredients = false;
   bool _saving = false;
 
   @override
@@ -139,7 +138,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         quantities,
         prices,
         dish: dish,
-        deductIngredients: _deductIngredients && dish != null,
       );
       if (mounted) {
         setState(() => _saving = false);
@@ -291,19 +289,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.teal),
                 ),
               ],
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 150),
-              child: _matchedDish != null
-                  ? SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text('Deduct "${_matchedDish!.name}" ingredients'),
-                      subtitle: const Text('Fresh ingredients move to Use Soon'),
-                      value: _deductIngredients,
-                      onChanged: (v) => setState(() => _deductIngredients = v),
-                    )
-                  : const SizedBox.shrink(),
             ),
             const SizedBox(height: 12),
             SizedBox(

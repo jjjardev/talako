@@ -175,32 +175,19 @@ class _ItemCard extends StatelessWidget {
 
   const _ItemCard({required this.item, required this.onEdit});
 
-  bool _isIngredientView(Item item) => item.isIngredient;
-
   @override
   Widget build(BuildContext context) {
     final inv = context.read<InventoryProvider>();
     final badges = inv.badges[item.id] ?? const <ItemBadge>{};
-    // Ingredient-only cards cycle freshness; retail cycles stock status.
-    final statusColor = _isIngredientView(item) && item.usageType == UsageType.ingredientOnly
-        ? item.freshnessStatus.color
-        : item.stockStatus.color;
-    final statusLabel = _isIngredientView(item) && item.usageType == UsageType.ingredientOnly
-        ? item.freshnessStatus.label
-        : item.stockStatus.label;
+    final statusColor = item.stockStatus.color;
+    final statusLabel = item.stockStatus.label;
 
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: () {
-          final inv = context.read<InventoryProvider>();
-          if (_isIngredientView(item) && item.usageType == UsageType.ingredientOnly) {
-            inv.cycleFreshness(item.id!);
-          } else {
-            inv.cycleStockStatus(item.id!);
-          }
-        },
+        onTap: () =>
+            context.read<InventoryProvider>().cycleStockStatus(item.id!),
         onLongPress: onEdit,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -291,9 +278,7 @@ class _ItemEditorSheet extends StatefulWidget {
 
 class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late UsageType _usageType = widget.item.usageType;
-  late bool _perishable = widget.item.perishable;
   late StockStatus _stockStatus = widget.item.stockStatus;
-  late FreshnessStatus _freshnessStatus = widget.item.freshnessStatus;
   late final TextEditingController _notes =
       TextEditingController(text: widget.item.notes ?? '');
   late final TextEditingController _price =
@@ -311,9 +296,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
     await context.read<InventoryProvider>().updateItem(widget.item.copyWith(
           price: price <= 0 ? null : price,
           usageType: _usageType,
-          perishable: _perishable || _usageType == UsageType.ingredientOnly,
           stockStatus: _stockStatus,
-          freshnessStatus: _freshnessStatus,
           notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           clearNotes: _notes.text.trim().isEmpty,
         ));
@@ -384,19 +367,9 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                 ButtonSegment(value: UsageType.both, label: Text('Both')),
               ],
               selected: {_usageType},
-              onSelectionChanged: (s) => setState(() {
-                _usageType = s.first;
-                if (_usageType == UsageType.ingredientOnly) _perishable = true;
-              }),
+              onSelectionChanged: (s) =>
+                  setState(() => _usageType = s.first),
             ),
-            if (_usageType != UsageType.ingredientOnly)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text('Perishable'),
-                value: _perishable,
-                onChanged: (v) => setState(() => _perishable = v),
-              ),
             const SizedBox(height: 6),
             Row(children: [
               const SizedBox(
@@ -408,20 +381,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
                       setState(() => _stockStatus = _stockStatus.next()),
                   child: _statusChip(_stockStatus.label, _stockStatus.color,
                       'tap to change'),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 6),
-            Row(children: [
-              const SizedBox(
-                  width: 92,
-                  child: Text('Fresh:', style: TextStyle(fontSize: 13))),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(
-                      () => _freshnessStatus = _freshnessStatus.next()),
-                  child: _statusChip(_freshnessStatus.label,
-                      _freshnessStatus.color, 'tap to change'),
                 ),
               ),
             ]),

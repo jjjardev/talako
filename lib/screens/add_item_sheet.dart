@@ -14,7 +14,6 @@ class _AddItemSheetState extends State<AddItemSheet> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   UsageType _usageType = UsageType.retailOnly;
-  bool _perishable = false;
   bool _saving = false;
 
   @override
@@ -42,7 +41,6 @@ class _AddItemSheetState extends State<AddItemSheet> {
           name: name,
           price: price,
           usageType: _usageType,
-          perishable: _perishable,
         );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -114,19 +112,6 @@ class _AddItemSheetState extends State<AddItemSheet> {
             selected: {_usageType},
             onSelectionChanged: (s) => setState(() => _usageType = s.first),
           ),
-          if (_usageType != UsageType.retailOnly) ...[
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('Perishable'),
-              subtitle: const Text('Spoils - tracked by freshness'),
-              value: _perishable || _usageType == UsageType.ingredientOnly,
-              onChanged: _usageType == UsageType.ingredientOnly
-                  ? null
-                  : (v) => setState(() => _perishable = v),
-            ),
-          ],
           const SizedBox(height: 12),
           SizedBox(
             height: 48,

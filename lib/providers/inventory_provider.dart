@@ -39,14 +39,14 @@ class InventoryProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
 
   List<Item> _items = [];
-  List<DishWithIngredients> _dishes = [];
+  List<Dish> _dishes = [];
   Map<int, Set<ItemBadge>> _badges = {};
   Map<int, int> _servedWeek = {};
   StockFilter _filter = StockFilter.all;
   bool _loading = false;
 
   List<Item> get items => _items;
-  List<DishWithIngredients> get dishes => _dishes;
+  List<Dish> get dishes => _dishes;
   Map<int, Set<ItemBadge>> get badges => _badges;
   /// Served counts for the last 7 days, keyed by dish id.
   Map<int, int> get servedWeek => _servedWeek;
@@ -102,22 +102,9 @@ class InventoryProvider extends ChangeNotifier {
     return lowOrOutList;
   }
 
-  List<Item> get palengkeWetMarket {
-    final list = _items
-        .where((i) =>
-            i.isIngredient &&
-            (i.freshnessStatus == FreshnessStatus.emptySpoiled ||
-                i.freshnessStatus == FreshnessStatus.useSoon))
-        .toList();
-    list.sort((a, b) {
-      final ra = a.freshnessStatus == FreshnessStatus.emptySpoiled ? 0 : 1;
-      final rb = b.freshnessStatus == FreshnessStatus.emptySpoiled ? 0 : 1;
-      final r = ra.compareTo(rb);
-      if (r != 0) return r;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-    return list;
-  }
+  /// Unified shopping list: everything Running Low or Out of Stock,
+  /// regardless of type. Out-of-stock sorts first.
+  List<Item> get shoppingList => palengkeDryGoods;
 
   void setFilter(StockFilter f) {
     _filter = f;
@@ -201,17 +188,7 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<void> _loadDishes() async {
     try {
-      final dishes = await _db.getAllDishes();
-      final ingredientMap =
-          await _db.getIngredientsForDishes(dishes.map((d) => d.id!).toList());
-      _dishes = dishes
-          .map((d) => DishWithIngredients(
-                dish: d,
-                ingredients: (ingredientMap[d.id] ?? const [])
-                    .map(DishIngredientLine.fromItem)
-                    .toList(),
-              ))
-          .toList();
+      _dishes = await _db.getAllDishes();
     } catch (e, s) {
       logError('load-dishes', e, s);
       _dishes = [];
@@ -231,29 +208,17 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> cycleFreshness(int itemId) async {
-    final item = itemById(itemId);
-    if (item == null) return;
-    try {
-      await _db.updateItemFreshness(item.id!, item.freshnessStatus.next().dbValue);
-      await loadInventory();
-    } catch (e, s) {
-      logError('cycle-freshness', e, s);
-    }
-  }
 
   Future<String?> addItem({
     required String name,
     required double price,
     required UsageType usageType,
-    bool perishable = false,
   }) async {
     try {
       await _db.insertItem(Item(
         name: name.trim(),
         price: price,
         usageType: usageType,
-        perishable: perishable || usageType == UsageType.ingredientOnly,
       ));
       await loadInventory();
       return null;
@@ -296,20 +261,16 @@ class InventoryProvider extends ChangeNotifier {
     required String name,
     required double price,
     double capital = 0,
-    required List<int> ingredientIds,
   }) async {
     if (capital > 0 && price <= capital) {
       return 'Puhunan must be below the selling price';
     }
     try {
       if (dishId == null) {
-        final id =
-            await _db.insertDish(Dish(name: name.trim(), price: price, capital: capital));
-        await _db.setDishIngredients(id, ingredientIds);
+        await _db.insertDish(Dish(name: name.trim(), price: price, capital: capital));
       } else {
         await _db.updateDish(
             Dish(id: dishId, name: name.trim(), price: price, capital: capital));
-        await _db.setDishIngredients(dishId, ingredientIds);
       }
       await loadInventory();
       return null;
@@ -346,15 +307,9 @@ class InventoryProvider extends ChangeNotifier {
       final customerId = customer?.id;
       if (customerId == null || dish.id == null) return null;
 
-      // Leftover (already-cooked) plates are consumed before touching
-      // fresh ingredients - no freshness hit for reheated food.
-      final leftover = await _db.getReheatLeftover(dish.id!);
-      var deducted = false;
-      if (leftover > 0) {
+      // Reheated leftovers sell first; nothing else changes on sale.
+      if (await _db.getReheatLeftover(dish.id!) > 0) {
         await _db.consumeReheatLeftover(dish.id!);
-      } else {
-        final ids = await _db.getDishIngredientIds(dish.id!);
-        deducted = await _db.demoteFreshIngredients(ids) > 0;
       }
 
       final txnId = await _db.insertTransactionWithItems(
@@ -370,7 +325,6 @@ class InventoryProvider extends ChangeNotifier {
           }
         ],
         isCashSale: true,
-        deductedIngredients: deducted,
         dishId: dish.id,
       );
       logInfo('tap-sale #$txnId ${dish.name} +${dish.margin}');
@@ -492,7 +446,7 @@ class InventoryProvider extends ChangeNotifier {
 
   Dish? dishByIdOf(int id) {
     for (final d in dishes) {
-      if (d.dish.id == id) return d.dish;
+      if (d.id == id) return d;
     }
     return null;
   }
@@ -501,17 +455,17 @@ class InventoryProvider extends ChangeNotifier {
     final dish = dishByIdOf(dishId);
     if (dish == null) return;
     final name = 'Leftover: ${dish.name}';
-    var item = await _db.getItemByName(name);
+    final item = await _db.getItemByName(name);
     if (item == null) {
       await _db.insertItem(Item(
         name: name,
         price: 0,
         usageType: UsageType.ingredientOnly,
-        freshnessStatus: FreshnessStatus.useSoon,
         notes: 'Auto-created from unsold plates',
       ));
     } else {
-      await _db.updateItemFreshness(item.id!, FreshnessStatus.useSoon.dbValue);
+      await _db.updateItemStockStatus(
+          item.id!, StockStatus.wellStocked.dbValue);
     }
   }
 
@@ -556,8 +510,9 @@ class InventoryProvider extends ChangeNotifier {
       ));
       if (markEmpty) {
         final item = itemById(itemId);
-        if (item != null && item.isIngredient) {
-          await _db.updateItemFreshness(itemId, FreshnessStatus.emptySpoiled.dbValue);
+        if (item != null) {
+          await _db.updateItemStockStatus(
+              itemId, StockStatus.outOfStock.dbValue);
         }
       }
       await loadInventory();

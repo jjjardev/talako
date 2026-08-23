@@ -324,18 +324,6 @@ class DatabaseHelper {
     );
   }
 
-  Future<int> updateItemFreshness(int id, String freshnessDbValue) async {
-    final db = await database;
-    return await db.update(
-      'items',
-      {
-        'freshness_status': freshnessDbValue,
-        'last_status_updated': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
 
   /// Restocking resets the shelf status to well-stocked and stamps when the
   /// fresh supply arrived (drives "days since bought" hints).
@@ -347,7 +335,6 @@ class DatabaseHelper {
       'items',
       {
         'stock_status': 'well_stocked',
-        'freshness_status': 'fresh',
         'last_restocked': DateTime.now().toIso8601String(),
         'last_status_updated': DateTime.now().toIso8601String(),
       },
@@ -647,24 +634,6 @@ class DatabaseHelper {
     });
   }
 
-  /// Demote-only rule: a served dish can only move an ingredient from
-  /// `fresh` to `use_soon`. Never upgrades and never marks anything empty -
-  /// manual freshness taps remain the source of truth for spoilage.
-  Future<int> demoteFreshIngredients(List<int> itemIds) async {
-    if (itemIds.isEmpty) return 0;
-    final db = await database;
-    final placeholders = List.filled(itemIds.length, '?').join(',');
-    return await db.update(
-      'items',
-      {
-        'freshness_status': 'use_soon',
-        'last_status_updated': DateTime.now().toIso8601String(),
-      },
-      where: "id IN ($placeholders) AND freshness_status = 'fresh'",
-      whereArgs: itemIds,
-    );
-  }
-
   // ─── Dishes ─────────────────────────────────────────────────────────
 
   Future<int> insertDish(Dish dish) async {
@@ -700,18 +669,6 @@ class DatabaseHelper {
     return result.map(Dish.fromMap).toList();
   }
 
-  Future<void> setDishIngredients(int dishId, List<int> itemIds) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn.delete('dish_ingredients', where: 'dish_id = ?', whereArgs: [dishId]);
-      for (final itemId in itemIds.toSet()) {
-        await txn.insert('dish_ingredients', {
-          'dish_id': dishId,
-          'item_id': itemId,
-        });
-      }
-    });
-  }
 
   Future<List<int>> getDishIngredientIds(int dishId) async {
     final db = await database;

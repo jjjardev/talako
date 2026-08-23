@@ -7,8 +7,6 @@ class Item {
   final String createdAt;
   final UsageType usageType;
   final StockStatus stockStatus;
-  final FreshnessStatus freshnessStatus;
-  final bool perishable;
   final String? notes;
   final String? lastStatusUpdated;
   final String? lastRestocked;
@@ -20,8 +18,6 @@ class Item {
     String? createdAt,
     this.usageType = UsageType.retailOnly,
     this.stockStatus = StockStatus.wellStocked,
-    this.freshnessStatus = FreshnessStatus.fresh,
-    this.perishable = false,
     this.notes,
     this.lastStatusUpdated,
     this.lastRestocked,
@@ -38,11 +34,11 @@ class Item {
       'created_at': createdAt,
       'usage_type': usageType.dbValue,
       'stock_status': stockStatus.dbValue,
-      'freshness_status': freshnessStatus.dbValue,
-      'perishable': perishable ? 1 : 0,
       'notes': notes,
       'last_status_updated': lastStatusUpdated,
       'last_restocked': lastRestocked,
+      // freshness_status / perishable columns are legacy (v5 schema);
+      // intentionally no longer written - defaults apply.
     };
   }
 
@@ -54,8 +50,6 @@ class Item {
       createdAt: map['created_at'] as String?,
       usageType: UsageTypeX.fromDb(map['usage_type'] as String?),
       stockStatus: StockStatusX.fromDb(map['stock_status'] as String?),
-      freshnessStatus: FreshnessStatusX.fromDb(map['freshness_status'] as String?),
-      perishable: (map['perishable'] as int?) == 1,
       notes: map['notes'] as String?,
       lastStatusUpdated: map['last_status_updated'] as String?,
       lastRestocked: map['last_restocked'] as String?,
@@ -69,8 +63,6 @@ class Item {
     String? createdAt,
     UsageType? usageType,
     StockStatus? stockStatus,
-    FreshnessStatus? freshnessStatus,
-    bool? perishable,
     String? notes,
     bool clearNotes = false,
     String? lastStatusUpdated,
@@ -83,8 +75,6 @@ class Item {
       createdAt: createdAt ?? this.createdAt,
       usageType: usageType ?? this.usageType,
       stockStatus: stockStatus ?? this.stockStatus,
-      freshnessStatus: freshnessStatus ?? this.freshnessStatus,
-      perishable: perishable ?? this.perishable,
       notes: clearNotes ? null : (notes ?? this.notes),
       lastStatusUpdated: lastStatusUpdated ?? this.lastStatusUpdated,
       lastRestocked: lastRestocked ?? this.lastRestocked,

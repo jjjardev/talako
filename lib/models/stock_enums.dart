@@ -65,44 +65,6 @@ extension StockStatusX on StockStatus {
       .firstWhere((s) => s.dbValue == value, orElse: () => StockStatus.wellStocked);
 }
 
-enum FreshnessStatus { fresh, useSoon, frozen, emptySpoiled }
-
-extension FreshnessStatusX on FreshnessStatus {
-  String get dbValue => switch (this) {
-        FreshnessStatus.fresh => 'fresh',
-        FreshnessStatus.useSoon => 'use_soon',
-        FreshnessStatus.frozen => 'frozen',
-        FreshnessStatus.emptySpoiled => 'empty_spoiled',
-      };
-
-  String get label => switch (this) {
-        FreshnessStatus.fresh => 'Fresh',
-        FreshnessStatus.useSoon => 'Use Soon',
-        FreshnessStatus.frozen => 'Frozen',
-        FreshnessStatus.emptySpoiled => 'Empty / Spoiled',
-      };
-
-  Color get color => switch (this) {
-        FreshnessStatus.fresh => Colors.green,
-        FreshnessStatus.useSoon => Colors.orange,
-        FreshnessStatus.frozen => Colors.lightBlue,
-        FreshnessStatus.emptySpoiled => Colors.red,
-      };
-
-  /// Destructive state last in the tap cycle (mis-tap safe).
-  FreshnessStatus next() => switch (this) {
-        FreshnessStatus.fresh => FreshnessStatus.useSoon,
-        FreshnessStatus.useSoon => FreshnessStatus.frozen,
-        FreshnessStatus.frozen => FreshnessStatus.emptySpoiled,
-        FreshnessStatus.emptySpoiled => FreshnessStatus.fresh,
-      };
-
-  bool get usable => this == FreshnessStatus.fresh || this == FreshnessStatus.frozen;
-
-  static FreshnessStatus fromDb(String? value) => FreshnessStatus.values
-      .firstWhere((f) => f.dbValue == value, orElse: () => FreshnessStatus.fresh);
-}
-
 /// What happens to unsold cooked plates at end of day.
 enum LeftoverDisposition {
   reheat,
@@ -112,15 +74,3 @@ enum LeftoverDisposition {
   String get dbValue => name;
 }
 
-/// Derived, never stored.
-enum DishAvailability { available, limited, unavailable }
-
-DishAvailability deriveDishAvailability(List<FreshnessStatus> ingredientStates) {
-  if (ingredientStates.any((s) => s == FreshnessStatus.emptySpoiled)) {
-    return DishAvailability.unavailable;
-  }
-  if (ingredientStates.any((s) => s == FreshnessStatus.useSoon)) {
-    return DishAvailability.limited;
-  }
-  return DishAvailability.available;
-}

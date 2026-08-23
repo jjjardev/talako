@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'kitchen_screen.dart';
-import 'palengke_screen.dart';
+import 'shopping_list_screen.dart';
 import 'stock_watch_screen.dart';
 import '../providers/inventory_provider.dart';
 
@@ -15,7 +15,7 @@ class StockHomeScreen extends StatefulWidget {
 class _StockHomeScreenState extends State<StockHomeScreen> {
   _Segment _segment = _Segment.shelf;
 
-  bool get _onPalengke => _segment == _Segment.palengke;
+  bool get _onPalengke => _segment == _Segment.shopping;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +29,7 @@ class _StockHomeScreenState extends State<StockHomeScreen> {
               tooltip: 'Share list',
               icon: const Icon(Icons.share),
               onPressed: () =>
-                  sharePalengkeList(context.read<InventoryProvider>()),
+                  shareShoppingList(context.read<InventoryProvider>()),
             ),
         ],
       ),
@@ -41,7 +41,7 @@ class _StockHomeScreenState extends State<StockHomeScreen> {
               segments: const [
                 ButtonSegment(value: _Segment.shelf, label: Text('Shelf')),
                 ButtonSegment(value: _Segment.kitchen, label: Text('Kitchen')),
-                ButtonSegment(value: _Segment.palengke, label: Text('Palengke')),
+                ButtonSegment(value: _Segment.shopping, label: Text('Shopping')),
               ],
               selected: {_segment},
               onSelectionChanged: (s) => setState(() => _segment = s.first),
@@ -51,7 +51,7 @@ class _StockHomeScreenState extends State<StockHomeScreen> {
             child: switch (_segment) {
               _Segment.shelf => const StockWatchScreen(),
               _Segment.kitchen => const KitchenScreen(),
-              _Segment.palengke => const PalengkeScreen(),
+              _Segment.shopping => const ShoppingListScreen(),
             },
           ),
         ],
@@ -60,4 +60,4 @@ class _StockHomeScreenState extends State<StockHomeScreen> {
   }
 }
 
-enum _Segment { shelf, kitchen, palengke }
+enum _Segment { shelf, kitchen, shopping }

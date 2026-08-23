@@ -5,7 +5,6 @@ import 'package:talako/database/database_helper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:talako/models/customer.dart';
 import 'package:talako/models/dish.dart';
-import 'package:talako/models/item.dart';
 import 'package:talako/models/stock_enums.dart';
 import 'package:talako/widgets/alphabet_strip.dart';
 import 'package:talako/providers/inventory_provider.dart';
@@ -120,8 +119,7 @@ void main() {
       final customerId = await db.insertCustomer(Customer(name: 'Menu Cust'));
 
       await txnProvider.addDishTransaction(
-          customerId, ['Tapsilog'], [2], [75],
-          dish: tapsi, deductIngredients: false);
+          customerId, ['Tapsilog'], [2], [75], dish: tapsi);
       await txnProvider.addTransactionWithItemNames(
           customerId, ['Plain Chips'], [1], [20]);
 
@@ -156,52 +154,44 @@ void main() {
 
     test('saveDish rejects puhunan above selling price', () async {
       final inv = InventoryProvider();
-      final error = await inv.saveDish(
-          name: 'Bad Margin Dish', price: 50, capital: 60, ingredientIds: []);
+      final error =
+          await inv.saveDish(name: 'Bad Margin Dish', price: 50, capital: 60);
       expect(error, 'Puhunan must be below the selling price');
     });
   });
 
-  group('served counts & availability', () {
+  group('served counts', () {
     test('week counts keyed by dish after sales', () async {
       final inv = InventoryProvider();
       await inv.loadInventory();
-      final id = inv.dishes.firstWhere((d) => d.dish.name == 'Tapsilog').dish.id!;
+      final id = inv.dishes.firstWhere((d) => d.name == 'Tapsilog').id!;
       expect(inv.servedWeek[id] ?? 0, greaterThanOrEqualTo(3));
-    });
-
-    test('empty-ingredient dish stays unavailable', () {
-      final d = DishWithIngredients(dish: Dish(name: 'X', price: 1));
-      expect(d.availability, DishAvailability.unavailable);
     });
   });
 group('end of day', () {
-  test('reheat leftovers are consumed before touching fresh ingredients',
+  test('reheat leftovers are consumed first and tracked to zero',
       () async {
     final db = DatabaseHelper.instance;
     final inv = InventoryProvider();
 
-    final eggId = await db.insertItem(Item(
-        name: 'EOL Egg', price: 0, usageType: UsageType.ingredientOnly));
-    final dishId = await db.insertDish(
-        Dish(name: 'EOL Adobo', price: 60, capital: 30));
-    await db.setDishIngredients(dishId, [eggId]);
+    final dishId =
+        await db.insertDish(Dish(name: 'EOL Adobo', price: 60, capital: 30));
 
     // Yesterday's unsold plate marked for reheat.
     await db.addLeftover(dishId, 1, 'reheat', '2026-01-01');
+    expect(await inv.getReheatLeftoverPublic(dishId), 1);
 
-    // First sale consumes the leftover - freshness untouched.
-    final r1 = await inv.recordTapSale((await db.getAllDishes()).firstWhere((d) => d.id == dishId));
+    final dishObj = (await db.getAllDishes()).firstWhere((d) => d.id == dishId);
+
+    // First sale consumes the leftover.
+    final r1 = await inv.recordTapSale(dishObj);
     expect(r1, isNotNull);
-    var egg = (await db.getAllItems()).firstWhere((i) => i.id == eggId);
-    expect(egg.freshnessStatus, FreshnessStatus.fresh,
-        reason: 'leftover was consumed instead');
     expect(await inv.getReheatLeftoverPublic(dishId), 0);
 
-    // Second sale has no leftover left -> fresh demotes.
-    await inv.recordTapSale((await db.getAllDishes()).firstWhere((d) => d.id == dishId));
-    egg = (await db.getAllItems()).firstWhere((i) => i.id == eggId);
-    expect(egg.freshnessStatus, FreshnessStatus.useSoon);
+    // Second sale still records normally.
+    final r2 = await inv.recordTapSale(dishObj);
+    expect(r2, isNotNull);
+    expect((await inv.todaySummary())['plates'], greaterThanOrEqualTo(2));
   });
 
   test('dispositions: ingredient pseudo-item + spoiled->spoilage log',
@@ -209,7 +199,7 @@ group('end of day', () {
     final db = DatabaseHelper.instance;
     final inv = InventoryProvider();
     await inv.loadInventory();
-    final dish = inv.dishes.firstWhere((d) => d.dish.name == 'EOL Adobo').dish;
+    final dish = inv.dishes.firstWhere((d) => d.name == 'EOL Adobo');
 
     await inv.saveLeftovers([
       (dishId: dish.id!, qty: 2, disposition: 'ingredients'),
@@ -220,6 +210,7 @@ group('end of day', () {
     expect(pseudo, isNotNull,
         reason: 'ingredient conversion creates a usable pseudo-item');
     expect(pseudo!.usageType, UsageType.ingredientOnly);
+    expect(pseudo.stockStatus, StockStatus.wellStocked);
 
     final monthStart =
         DateTime(DateTime.now().year, DateTime.now().month).toIso8601String();
@@ -233,12 +224,12 @@ group('end of day', () {
     final inv = InventoryProvider();
     final txnProvider = TransactionsProvider();
     await inv.loadInventory();
-    final dish = inv.dishes.firstWhere((d) => d.dish.name == 'Tapsilog').dish;
+    final dish = inv.dishes.firstWhere((d) => d.name == 'Tapsilog');
 
     await inv.recordTapSale(dish);
     final customerId = await db.insertCustomer(Customer(name: 'Reset Cust'));
-    final creditTxn = await txnProvider.addDishTransaction(customerId,
-        ['Tapsilog'], [1], [75], dish: dish);
+    final creditTxn = await txnProvider.addDishTransaction(
+        customerId, ['Tapsilog'], [1], [75], dish: dish);
 
     final removed = await inv.resetTodayTaps();
     expect(removed, greaterThanOrEqualTo(1));
@@ -259,8 +250,6 @@ group('end of day', () {
     final twoDaysAgo = DateTime.now().subtract(const Duration(days: 2));
     final customerId = await db.insertCustomer(Customer(name: 'Gap Cust'));
     final all = await db.getAllDishes();
-    // ignore: avoid_print
-    print('DEBUG dishes=${all.length} path=${await db.getDbFilePath()}');
     final dish = all.firstWhere(
       (d) => d.name == 'Tapsilog',
       orElse: () => throw StateError(
@@ -318,7 +307,7 @@ group('end of day', () {
   test('undoLastTapSale works without in-memory history', () async {
     final inv = InventoryProvider();
     await inv.loadInventory();
-    final dish = inv.dishes.firstWhere((d) => d.dish.name == 'Tapsilog').dish;
+    final dish = inv.dishes.firstWhere((d) => d.name == 'Tapsilog');
     await inv.recordTapSale(dish);
     final before = await inv.todaySummary();
 

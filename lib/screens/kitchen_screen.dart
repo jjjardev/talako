@@ -125,15 +125,12 @@ class _IngredientsTabState extends State<_IngredientsTab> {
             itemCount: sorted.length,
         itemBuilder: (context, i) {
           final item = sorted[i];
-        final dishCount = inv.dishes
-            .where((d) => d.ingredients.any((line) => line.itemId == item.id))
-            .length;
-        final color = item.freshnessStatus.color;
+        const color = Colors.teal;
         return Card(
           clipBehavior: Clip.antiAlias,
           margin: EdgeInsets.zero,
           child: InkWell(
-            onTap: () => context.read<InventoryProvider>().cycleFreshness(item.id!),
+            onTap: () => context.read<InventoryProvider>().cycleStockStatus(item.id!),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -150,22 +147,22 @@ class _IngredientsTabState extends State<_IngredientsTab> {
                       const Spacer(),
                       Row(
                         children: [
-                          Icon(Icons.circle, size: 10, color: color),
+                          Icon(Icons.circle, size: 10, color: item.stockStatus.color),
                           const SizedBox(width: 4),
                           Expanded(
-                            child: Text(item.freshnessStatus.label,
+                            child: Text(item.stockStatus.label,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+                                    fontSize: 12, fontWeight: FontWeight.w600, color: item.stockStatus.color)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
                         [
-                          if (item.lastRestocked != null) 'bought ${_relative(item.lastRestocked)}',
-                          if (dishCount > 0) 'in $dishCount dishes',
+                          if (item.lastRestocked != null)
+                            'bought ${_relative(item.lastRestocked)}',
                         ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -280,7 +277,7 @@ class _MenuTabState extends State<_MenuTab> {
     );
   }
 
-  Future<void> _openEditor({DishWithIngredients? existing}) async {
+  Future<void> _openEditor({Dish? existing}) async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => AddEditDishScreen(existing: existing)),
@@ -376,10 +373,10 @@ class _MenuTabState extends State<_MenuTab> {
                   itemBuilder: (context, i) {
                     final d = dishes[i];
                     return _MenuCard(
-                      data: d,
-                      servedWeek: inv.servedWeek[d.dish.id] ?? 0,
-                      isBestSeller: inv.bestSellerDishId == d.dish.id,
-                      onTap: () => _sell(d),
+                      dish: dishes[i],
+                      servedWeek: inv.servedWeek[dishes[i].id] ?? 0,
+                      isBestSeller: inv.bestSellerDishId == dishes[i].id,
+                      onTap: () => _sell(dishes[i]),
                       onLongPress: () => _openEditor(existing: d),
                     );
                   },
@@ -389,10 +386,10 @@ class _MenuTabState extends State<_MenuTab> {
     );
   }
 
-  Future<void> _sell(DishWithIngredients d) async {
+  Future<void> _sell(Dish d) async {
     HapticFeedback.mediumImpact();
     final inv = context.read<InventoryProvider>();
-    final result = await inv.recordTapSale(d.dish);
+    final result = await inv.recordTapSale(d);
     if (!mounted || result == null) return;
     final (txnId, margin) = result;
     await _refreshToday();
@@ -563,29 +560,22 @@ class RecapCard extends StatelessWidget {
 }
 
 class _MenuCard extends StatelessWidget {
-  final DishWithIngredients data;
+  final Dish dish;
   final int servedWeek;
   final bool isBestSeller;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   const _MenuCard({
-    required this.data,
+    required this.dish,
     required this.servedWeek,
     required this.isBestSeller,
     required this.onTap,
     required this.onLongPress,
   });
 
-  Color get _availabilityColor => switch (data.availability) {
-        DishAvailability.available => Colors.green,
-        DishAvailability.limited => Colors.orange,
-        DishAvailability.unavailable => Colors.red,
-      };
-
   @override
   Widget build(BuildContext context) {
-    final dish = data.dish;
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
@@ -595,7 +585,7 @@ class _MenuCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(height: 5, color: _availabilityColor),
+            Container(height: 5, color: Colors.teal),
             Padding(
               padding: const EdgeInsets.all(8),
               child: Column(
@@ -621,8 +611,6 @@ class _MenuCard extends StatelessWidget {
                   const Spacer(),
                   Row(
                     children: [
-                      Icon(Icons.circle, size: 9, color: _availabilityColor),
-                      const SizedBox(width: 4),
                       Text('+${formatCurrency(dish.margin)}',
                           style: TextStyle(
                               fontSize: 13,

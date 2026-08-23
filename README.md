@@ -2,7 +2,7 @@
 
 **Track debts. Accept payments. Never lose a notebook again.**
 
-Now with **Stock Watch, Kitchen Mode & Palengke List** — a 30-second shelf scan instead of inventory counting.
+Now with **Stock Watch, Menu Inventory & Shopping List** — a 30-second shelf scan instead of inventory counting.
 
 **Track debts. Accept payments. Never lose a notebook again.**
 

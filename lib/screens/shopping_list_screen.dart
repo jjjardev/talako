@@ -5,19 +5,19 @@ import '../models/item.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
 
-class PalengkeScreen extends StatelessWidget {
-  const PalengkeScreen({super.key});
+class ShoppingListScreen extends StatelessWidget {
+  const ShoppingListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final inv = context.watch<InventoryProvider>();
-    final dry = inv.palengkeDryGoods;
-    final wet = inv.palengkeWetMarket;
+    final items = inv.shoppingList;
     final hotItems = inv.items
         .where((i) => inv.badges[i.id]?.contains(ItemBadge.hot) ?? false)
+        .where((i) => !items.contains(i))
         .toList();
 
-    if (dry.isEmpty && wet.isEmpty && hotItems.isEmpty) {
+    if (items.isEmpty && hotItems.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -37,15 +37,10 @@ class PalengkeScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       children: [
-          if (dry.isNotEmpty) ...[
-            _sectionHeader('Sari-Sari Needs (Dry Goods)', Icons.storefront),
-            for (final item in dry)
+          if (items.isNotEmpty) ...[
+            _sectionHeader('Running Low / Out of Stock', Icons.storefront),
+            for (final item in items)
               _RestockRow(item: item, statusLabel: item.stockStatus.label, statusColor: item.stockStatus.color),
-          ],
-          if (wet.isNotEmpty) ...[
-            _sectionHeader('Kitchen Needs (Wet Market)', Icons.soup_kitchen_outlined),
-            for (final item in wet)
-              _RestockRow(item: item, statusLabel: item.freshnessStatus.label, statusColor: item.freshnessStatus.color),
           ],
           if (hotItems.isNotEmpty) ...[
             _sectionHeader('Suggestions', Icons.tips_and_updates_outlined),
@@ -64,14 +59,14 @@ class PalengkeScreen extends StatelessWidget {
                 ),
               ),
           ],
-        if (dry.isNotEmpty || wet.isNotEmpty) ...[
+        if (items.isNotEmpty) ...[
           const SizedBox(height: 8),
           Center(
             child: FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: Colors.teal),
               icon: const Icon(Icons.share, size: 18),
               label: const Text('Share List'),
-              onPressed: () => sharePalengkeList(inv),
+              onPressed: () => shareShoppingList(inv),
             ),
           ),
           const SizedBox(height: 8),
@@ -95,23 +90,18 @@ class PalengkeScreen extends StatelessWidget {
 }
 
 /// Shared with StockHomeScreen's AppBar so it is reachable from any state.
-void sharePalengkeList(InventoryProvider inv) {
-  final dry = inv.palengkeDryGoods;
-  final wet = inv.palengkeWetMarket;
+void shareShoppingList(InventoryProvider inv) {
+  final items = inv.shoppingList;
   final hot = inv.items
-      .where((i) => inv.badges[i.id]?.contains(ItemBadge.hot) ?? false)
+      .where((i) =>
+          (inv.badges[i.id]?.contains(ItemBadge.hot) ?? false) &&
+          !items.contains(i))
       .toList();
-  final buffer = StringBuffer('PALENGKE LIST\n=============\n');
-  if (dry.isNotEmpty) {
-    buffer.writeln('\nDRY GOODS:');
-    for (final i in dry) {
+  final buffer = StringBuffer('SHOPPING LIST\n==============\n');
+  if (items.isNotEmpty) {
+    buffer.writeln('\nNEEDED:');
+    for (final i in items) {
       buffer.writeln('- ${i.name} (${i.stockStatus.label})');
-    }
-  }
-  if (wet.isNotEmpty) {
-    buffer.writeln('\nWET MARKET:');
-    for (final i in wet) {
-      buffer.writeln('- ${i.name} (${i.freshnessStatus.label})');
     }
   }
   if (hot.isNotEmpty) {
@@ -120,7 +110,7 @@ void sharePalengkeList(InventoryProvider inv) {
       buffer.writeln('- ${i.name}');
     }
   }
-  Share.share(buffer.toString(), subject: 'TalaKo Palengke List');
+  Share.share(buffer.toString(), subject: 'TalaKo Shopping List');
 }
 
 class _RestockRow extends StatefulWidget {

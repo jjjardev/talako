@@ -105,110 +105,32 @@ void main() {
       expect(loaded.stockStatus, StockStatus.outOfStock);
     });
 
-    test('restock resets both statuses and stamps time', () async {
+    test('restock resets status and stamps time', () async {
       final db = DatabaseHelper.instance;
       final a = await db.insertItem(Item(
         name: 'Restock Eggs',
         price: 9,
         stockStatus: StockStatus.outOfStock,
-        freshnessStatus: FreshnessStatus.emptySpoiled,
         usageType: UsageType.both,
       ));
       await db.markItemsRestocked([a]);
       final loaded = (await db.getAllItems()).firstWhere((i) => i.id == a);
       expect(loaded.stockStatus, StockStatus.wellStocked);
-      expect(loaded.freshnessStatus, FreshnessStatus.fresh);
       expect(loaded.lastRestocked, isNotNull);
     });
   });
 
   group('dishes', () {
-    late int eggId, riceId, porkId;
-
-    test('CRUD + ingredient stitching', () async {
+    test('CRUD works without ingredient linking', () async {
       final db = DatabaseHelper.instance;
-      eggId = await db.insertItem(
-          Item(name: 'Dish Egg', price: 9, usageType: UsageType.both));
-      riceId = await db.insertItem(Item(
-          name: 'Dish Rice', price: 12, usageType: UsageType.both));
-      porkId = await db.insertItem(Item(
-          name: 'Dish Pork', price: 45, usageType: UsageType.ingredientOnly));
+      final id =
+          await db.insertDish(Dish(name: 'Simple Dish', price: 80, capital: 40));
+      var dish = (await db.getAllDishes()).firstWhere((d) => d.id == id);
+      expect(dish.name, 'Simple Dish');
+      expect(dish.margin, 40.0);
 
-      final tapsi = await db.insertDish(Dish(name: 'Tapsilog', price: 75));
-      await db.setDishIngredients(tapsi, [eggId, riceId, porkId]);
-
-      final map = await db.getIngredientsForDishes([tapsi]);
-      expect(map[tapsi]!.length, 3);
-      expect(map[tapsi]!.any((i) => i.name == 'Dish Egg'), isTrue);
-
-      // Re-setting replaces (no duplicates).
-      await db.setDishIngredients(tapsi, [eggId, riceId]);
-      final again = await db.getIngredientsForDishes([tapsi]);
-      expect(again[tapsi]!.length, 2);
-
-      // Delete cascades links.
-      await db.deleteDish(tapsi);
-      final empty = await db.getIngredientsForDishes([tapsi]);
-      expect(empty[tapsi], isNull);
-    });
-
-    test('demote-only deduction rule', () async {
-      final db = DatabaseHelper.instance;
-      final fresh = await db.insertItem(
-          Item(name: 'Demote Fresh', price: 5, usageType: UsageType.both));
-      final frozen = await db.insertItem(Item(
-          name: 'Demote Frozen',
-          price: 5,
-          usageType: UsageType.ingredientOnly,
-          freshnessStatus: FreshnessStatus.frozen));
-      final spoiled = await db.insertItem(Item(
-          name: 'Demote Spoiled',
-          price: 5,
-          usageType: UsageType.ingredientOnly,
-          freshnessStatus: FreshnessStatus.emptySpoiled));
-
-      final changed =
-          await db.demoteFreshIngredients([fresh, frozen, spoiled]);
-      expect(changed, 1, reason: 'only the fresh ingredient may be demoted');
-
-      final all = await db.getAllItems();
-      expect(all.firstWhere((i) => i.id == fresh).freshnessStatus,
-          FreshnessStatus.useSoon);
-      expect(all.firstWhere((i) => i.id == frozen).freshnessStatus,
-          FreshnessStatus.frozen, reason: 'never upgraded or downgraded further');
-      expect(all.firstWhere((i) => i.id == spoiled).freshnessStatus,
-          FreshnessStatus.emptySpoiled, reason: 'never auto-cleared');
-    });
-  });
-
-  group('availability derivation', () {
-    test('matrix', () {
-      expect(
-          deriveDishAvailability(
-              [FreshnessStatus.fresh, FreshnessStatus.fresh]),
-          DishAvailability.available);
-      expect(
-          deriveDishAvailability(
-              [FreshnessStatus.fresh, FreshnessStatus.frozen]),
-          DishAvailability.available,
-          reason: 'frozen counts as usable');
-      expect(
-          deriveDishAvailability(
-              [FreshnessStatus.fresh, FreshnessStatus.useSoon]),
-          DishAvailability.limited);
-      expect(
-          deriveDishAvailability([
-            FreshnessStatus.fresh,
-            FreshnessStatus.emptySpoiled,
-          ]),
-          DishAvailability.unavailable);
-
-      // A dish stripped of every ingredient (cascade deletes) is incomplete.
-      expect(
-        DishWithIngredients(dish: Dish(name: 'Empty Dish', price: 1)).availability,
-        DishAvailability.unavailable,
-        reason: 'empty-ingredient dishes must not show as Available',
-      );
+      await db.deleteDish(id);
+      expect((await db.getAllDishes()).any((d) => d.id == id), isFalse);
     });
   });
 

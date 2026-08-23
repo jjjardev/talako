@@ -40,9 +40,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
     _PageData(
       icon: Icons.soup_kitchen_outlined,
-      title: 'Kitchen & Palengke',
+      title: 'Menu & Shopping List',
       body:
-          'Track ingredient freshness, define your dishes and see what you can serve today.\n\nThe Palengke List builds itself - share it before heading to the market.',
+          'Set your dishes with cost and price, then tap to record every sale.\n\nThe Shopping List builds itself - share it before heading to the market.',
     ),
     _PageData(
       icon: Icons.settings,

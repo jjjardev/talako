@@ -207,15 +207,13 @@ class TransactionsProvider extends ChangeNotifier {
 
   /// Records a credit that may include a dish sale. The matched dish line is
   /// stamped with dish_id + unit_capital so margins and per-dish analytics
-  /// include credit sales. When [deductIngredients] is true, the dish's
-  /// `fresh` ingredients are demoted to `use_soon`.
+  /// include credit sales.
   Future<int> addDishTransaction(
     int customerId,
     List<String> itemNames,
     List<int> quantities,
     List<double> prices, {
     Dish? dish,
-    bool deductIngredients = false,
   }) async {
     final items = <Map<String, dynamic>>[];
     for (int i = 0; i < itemNames.length; i++) {
@@ -231,23 +229,10 @@ class TransactionsProvider extends ChangeNotifier {
         if (isDishLine) 'unit_capital': dish.capital,
       });
     }
-    bool deducted = false;
-    if (deductIngredients && dish?.id != null) {
-      // Known asymmetry: tapping Undo on this credit deletes the receipt but
-      // cannot restore freshness (we do not snapshot pre-sale states).
-      // Demotion is demote-only, so worst case the owner re-taps to Fresh.
-      try {
-        final ids = await _db.getDishIngredientIds(dish!.id!);
-        deducted = await _db.demoteFreshIngredients(ids) > 0;
-      } catch (e, s) {
-        logError('dish-deduct', e, s);
-      }
-    }
     final txnId = await _db.insertTransactionWithItems(
       customerId,
       items,
       dishId: dish?.id,
-      deductedIngredients: deducted,
     );
     await loadActiveTransactions();
     return txnId;
