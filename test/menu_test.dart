@@ -161,11 +161,13 @@ void main() {
   });
 
   group('served counts', () {
-    test('week counts keyed by dish after sales', () async {
+    test('week and today counts keyed by dish after sales', () async {
       final inv = InventoryProvider();
       await inv.loadInventory();
       final id = inv.dishes.firstWhere((d) => d.name == 'Tapsilog').id!;
       expect(inv.servedWeek[id] ?? 0, greaterThanOrEqualTo(3));
+      expect(inv.servedToday[id] ?? 0, greaterThanOrEqualTo(1),
+          reason: 'the credit sale from earlier groups happened just now');
     });
   });
 group('end of day', () {

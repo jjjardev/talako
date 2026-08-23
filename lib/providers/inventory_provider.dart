@@ -42,6 +42,7 @@ class InventoryProvider extends ChangeNotifier {
   List<Dish> _dishes = [];
   Map<int, Set<ItemBadge>> _badges = {};
   Map<int, int> _servedWeek = {};
+  Map<int, int> _servedToday = {};
   StockFilter _filter = StockFilter.all;
   bool _loading = false;
 
@@ -50,6 +51,9 @@ class InventoryProvider extends ChangeNotifier {
   Map<int, Set<ItemBadge>> get badges => _badges;
   /// Served counts for the last 7 days, keyed by dish id.
   Map<int, int> get servedWeek => _servedWeek;
+
+  /// Served counts for today only (cash taps + credit dish lines).
+  Map<int, int> get servedToday => _servedToday;
   StockFilter get filter => _filter;
   bool get isLoading => _loading;
 
@@ -133,12 +137,18 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<void> _loadServedCounts() async {
     try {
-      final since =
-          DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
-      _servedWeek = await _db.getDishSaleCountsSince(since);
+      final now = DateTime.now();
+      final weekSince =
+          now.subtract(const Duration(days: 7)).toIso8601String();
+      final dayStart =
+          InventoryProvider.dateStr(now); // midnight, ISO date string
+      _servedWeek = await _db.getDishSaleCountsSince(weekSince);
+      _servedToday = await _db.getDishSaleCountsSince(
+          '${dayStart}T00:00:00.000');
     } catch (e, s) {
       logError('load-served-counts', e, s);
       _servedWeek = {};
+      _servedToday = {};
     }
   }
 
@@ -326,8 +336,9 @@ class InventoryProvider extends ChangeNotifier {
         dishId: dish.id,
       );
       logInfo('tap-sale #$txnId ${dish.name} +${dish.margin}');
-      // Hot path: no full reload during a rush - just bump served count.
+      // Hot path: no full reload during a rush - just bump served counts.
       _servedWeek[dish.id!] = (_servedWeek[dish.id!] ?? 0) + 1;
+      _servedToday[dish.id!] = (_servedToday[dish.id!] ?? 0) + 1;
       notifyListeners();
       return (txnId, dish.margin);
     } catch (e, s) {

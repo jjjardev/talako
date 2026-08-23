@@ -374,6 +374,7 @@ class _MenuTabState extends State<_MenuTab> {
                     final d = dishes[i];
                     return _MenuCard(
                       dish: dishes[i],
+                      servedToday: inv.servedToday[dishes[i].id] ?? 0,
                       servedWeek: inv.servedWeek[dishes[i].id] ?? 0,
                       isBestSeller: inv.bestSellerDishId == dishes[i].id,
                       onTap: () => _sell(dishes[i]),
@@ -561,6 +562,7 @@ class RecapCard extends StatelessWidget {
 
 class _MenuCard extends StatelessWidget {
   final Dish dish;
+  final int servedToday;
   final int servedWeek;
   final bool isBestSeller;
   final VoidCallback onTap;
@@ -568,6 +570,7 @@ class _MenuCard extends StatelessWidget {
 
   const _MenuCard({
     required this.dish,
+    required this.servedToday,
     required this.servedWeek,
     required this.isBestSeller,
     required this.onTap,
@@ -628,7 +631,16 @@ class _MenuCard extends StatelessWidget {
                       ],
                     ],
                   ),
-                  if (servedWeek > 0)
+                  if (servedToday > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('sold ${servedToday}x today',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.teal)),
+                    )
+                  else if (servedWeek > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text('served ${servedWeek}x this week',
