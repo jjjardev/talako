@@ -769,6 +769,52 @@ class DatabaseHelper {
     return rows.first['id'] as int;
   }
 
+  /// Marks every unpaid credit receipt of [customerId] as fully paid.
+  /// Cash tap-sales and owner-use rows are structurally excluded.
+  /// Returns the number of receipts settled and the amount collected.
+  Future<Map<String, double>> markAllCustomerReceiptsPaid(int customerId) async {
+    final db = await database;
+    return await db.transaction((txn) async {
+      final rows = await txn.rawQuery('''
+        SELECT id, (total_amount - paid_amount) AS remaining
+        FROM transactions
+        WHERE customer_id = ? AND paid_amount < total_amount
+          AND is_owner_consumption = 0 AND is_cash_sale = 0
+      ''', [customerId]);
+      double collected = 0;
+      for (final r in rows) {
+        final rem = (r['remaining'] as num).toDouble();
+        collected += rem;
+        await txn.update(
+          'transactions',
+          {'paid_amount': roundMoney(rem), 'status': 'PAID'},
+          where: 'id = ?',
+          whereArgs: [r['id']],
+        );
+      }
+      return {'settled': rows.length.toDouble(), 'collected': collected};
+    });
+  }
+
+  /// Customers ordered by most recent transaction first; never-used ones
+  /// trail alphabetically. Powers Add-Credit suggestions.
+  Future<List<Customer>> getCustomersByRecent() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT c.id, c.name, c.created_at,
+        MAX(t.date) AS last_txn
+      FROM customers c
+      LEFT JOIN transactions t ON t.customer_id = c.id
+      GROUP BY c.id
+      ORDER BY last_txn IS NULL, last_txn DESC, c.name COLLATE NOCASE ASC
+    ''');
+    return result.map((row) => Customer(
+          id: row['id'] as int,
+          name: row['name'] as String,
+          createdAt: row['created_at'] as String,
+        )).toList();
+  }
+
   // ─── Owner Consumption & Sales Intelligence ─────────────────────────
 
   Future<List<Map<String, dynamic>>> getOwnerConsumptionLog({int limit = 200}) async {

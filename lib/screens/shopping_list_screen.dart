@@ -13,7 +13,6 @@ class ShoppingListScreen extends StatelessWidget {
     final inv = context.watch<InventoryProvider>();
     final items = inv.shoppingList;
     final hotItems = inv.items
-        .where((i) => inv.badges[i.id]?.contains(ItemBadge.hot) ?? false)
         .where((i) => !items.contains(i))
         .toList();
 
@@ -45,23 +44,7 @@ class ShoppingListScreen extends StatelessWidget {
             for (final item in items)
               _RestockRow(item: item, statusLabel: item.stockStatus.label, statusColor: item.stockStatus.color),
           ],
-          if (hotItems.isNotEmpty) ...[
-            _sectionHeader('Suggestions', Icons.tips_and_updates_outlined),
-            for (final item in hotItems)
-              Card(
-                color: Colors.red.shade50,
-                child: ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.local_fire_department, color: Colors.red),
-                  title: Text(item.name,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, color: Colors.red.shade900)),
-                  subtitle: Text('Selling fast this week - consider buying extra.',
-                      style:
-                          TextStyle(fontSize: 13, color: Colors.grey.shade700)),
-                ),
-              ),
-          ],
+
         if (items.isNotEmpty) ...[
           const SizedBox(height: 8),
           Center(
@@ -96,22 +79,11 @@ class ShoppingListScreen extends StatelessWidget {
 /// Shared with StockHomeScreen's AppBar so it is reachable from any state.
 void shareShoppingList(InventoryProvider inv) {
   final items = inv.shoppingList;
-  final hot = inv.items
-      .where((i) =>
-          (inv.badges[i.id]?.contains(ItemBadge.hot) ?? false) &&
-          !items.contains(i))
-      .toList();
   final buffer = StringBuffer('SHOPPING LIST\n==============\n');
   if (items.isNotEmpty) {
     buffer.writeln('\nNEEDED:');
     for (final i in items) {
       buffer.writeln('- ${i.name} (${i.stockStatus.label})');
-    }
-  }
-  if (hot.isNotEmpty) {
-    buffer.writeln('\nBUY EXTRA (selling fast):');
-    for (final i in hot) {
-      buffer.writeln('- ${i.name}');
     }
   }
   Share.share(buffer.toString(), subject: 'TalaKo Shopping List');

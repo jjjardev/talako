@@ -235,6 +235,19 @@ class TransactionsProvider extends ChangeNotifier {
     await loadActiveTransactions();
   }
 
+  /// Settlement-day bulk: marks every unpaid credit receipt of the
+  /// customer as PAID in one update. Returns (count, amount collected).
+  Future<(int, double)?> markAllPaidForCustomer(int customerId) async {
+    try {
+      final r = await _db.markAllCustomerReceiptsPaid(customerId);
+      await loadActiveTransactions();
+      return (r['settled']!.toInt(), r['collected']!);
+    } catch (e, s) {
+      logError('mark-all-paid', e, s);
+      return null;
+    }
+  }
+
   Future<void> reversePayment(int transactionId, double amount) async {
     try {
       await _db.reverseTransactionPayment(transactionId, amount);

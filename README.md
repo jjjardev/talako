@@ -11,6 +11,7 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 ## Features
 
 **Credit Book**
+- Swipe a receipt right → 'Fully paid' — settled in one gesture, with Undo
 - All active debts sorted oldest-first, with full item breakdown (name, qty x unit price, subtotal)
 - Color-coded tiles: red = overdue (14+ days), orange = 7+ days, grey = recent
 - Overdue warning with total amount in the summary bar
@@ -33,13 +34,9 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 - Each dish carries its **Capital** (what the whole dish costs to cook) and **Price per serving** — a recovery bar shows how much of the capital you've earned back
 - **One tap = one sale recorded**, with per-tap Undo and a day-reset button for misclicks
 - Today strip: total output in pesos, plates served — across cash taps AND dishes sold on credit
-- Sold-Nx-today chip, best-seller 🏆 badge, thin-margin warning below 20%
-- End-of-Day recap: yesterday's sales per dish, plus leftover handling — reheat tomorrow, reuse as ingredient, or log as waste
-
 **Stock Watch (Shelf)**
 - Macro stock statuses: Well Stocked → Running Low → Out of Stock → Cold — tap to cycle. No counting, ever
-- Auto badges from sales history: 🔥 Hot · 🌡️ Cooling · 🧊 Cold · 🏷️ New
-- A-to-Z quick-jump strip; filter chips; long-press any item for notes, price and usage type (Retail / Ingredient / Both — ingredients don't need a selling price)
+- Sort toggle: A–Z or Urgent-first (Out → Low → rest); your filter and sort choice persist- A-to-Z quick-jump strip; filter chips; long-press any item for notes, price and usage type (Retail / Ingredient / Both — ingredients don't need a selling price)
 
 **Shopping List**
 - Builds itself from Running Low / Out of Stock items, most urgent first

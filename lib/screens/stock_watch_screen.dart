@@ -120,9 +120,11 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                                 ),
                                 itemCount: sorted.length,
                                 itemBuilder: (context, i) => _ItemCard(
-                                    item: sorted[i],
-                                    onEdit: () =>
-                                        _openEditor(context, sorted[i])),
+                                  item: sorted[i],
+                                  onEdit: () => _openEditor(context, sorted[i]),
+                                  onQuickActions: () =>
+                                      _openQuickActions(context, sorted[i]),
+                                ),
                               ),
                               if (showAzStrip)
                               Positioned(
@@ -189,6 +191,64 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
     );
   }
 
+  void _openQuickActions(BuildContext context, Item item) {
+    final inv = context.read<InventoryProvider>();
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(item.name,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            for (final status in StockStatus.values)
+              ListTile(
+                dense: true,
+                leading: Icon(Icons.circle,
+                    size: 12, color: status.color),
+                title: Text(status.label),
+                trailing: item.stockStatus == status
+                    ? const Icon(Icons.check, size: 18, color: Colors.teal)
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  inv.setStockStatus(item.id!, status);
+                },
+              ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.restore,
+                  size: 20, color: Colors.teal),
+              title: const Text('Restocked - back to Well Stocked'),
+              subtitle: const Text('Marks bought and stamps the date'),
+              onTap: () {
+                Navigator.pop(ctx);
+                inv.restock([item.id!]);
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.edit_outlined, size: 20),
+              title: const Text('Edit details'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _openEditor(context, item);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openEditor(BuildContext context, Item item) {
     showModalBottomSheet(
       context: context,
@@ -205,13 +265,16 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
 class _ItemCard extends StatelessWidget {
   final Item item;
   final VoidCallback onEdit;
+  final VoidCallback onQuickActions;
 
-  const _ItemCard({required this.item, required this.onEdit});
+  const _ItemCard({
+    required this.item,
+    required this.onEdit,
+    required this.onQuickActions,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final inv = context.read<InventoryProvider>();
-    final badges = inv.badges[item.id] ?? const <ItemBadge>{};
     final statusColor = item.stockStatus.color;
     final statusLabel = item.stockStatus.label;
 
@@ -223,7 +286,7 @@ class _ItemCard extends StatelessWidget {
           HapticFeedback.selectionClick();
           context.read<InventoryProvider>().cycleStockStatus(item.id!);
         },
-        onLongPress: onEdit,
+        onLongPress: onQuickActions,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -262,18 +325,6 @@ class _ItemCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  if (badges.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        for (final b in badges.take(3))
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Icon(b.icon, size: 14, color: b.color),
-                          ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),

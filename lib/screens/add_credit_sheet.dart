@@ -37,7 +37,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   }
 
   Future<void> _loadSuggestions() async {
-    final customers = await _db.getAllCustomers();
+    final customers = await _db.getCustomersByRecent();
     final itemNames = await _db.getAllItemNames();
     final items = await _db.getAllItems(newestFirst: false);
     if (!mounted) return;

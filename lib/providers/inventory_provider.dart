@@ -7,31 +7,6 @@ import '../models/spoilage_entry.dart';
 import '../models/stock_enums.dart';
 import '../utils/app_logger.dart';
 
-enum ItemBadge { hot, cooling, cold, fresh }
-
-extension ItemBadgeX on ItemBadge {
-  String get label => switch (this) {
-        ItemBadge.hot => 'Hot',
-        ItemBadge.cooling => 'Cooling',
-        ItemBadge.cold => 'Cold',
-        ItemBadge.fresh => 'New',
-      };
-
-  IconData get icon => switch (this) {
-        ItemBadge.hot => Icons.local_fire_department,
-        ItemBadge.cooling => Icons.device_thermostat,
-        ItemBadge.cold => Icons.ac_unit,
-        ItemBadge.fresh => Icons.fiber_new,
-      };
-
-  Color get color => switch (this) {
-        ItemBadge.hot => Colors.red,
-        ItemBadge.cooling => Colors.orange,
-        ItemBadge.cold => Colors.lightBlue,
-        ItemBadge.fresh => Colors.green,
-      };
-}
-
 enum StockFilter { all, retail, ingredients, lowOrOut, cold }
 
 /// Shelf ordering. Alpha works with the A-Z strip; urgent puts
@@ -42,13 +17,11 @@ class InventoryProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
 
   List<Item> _items = [];
-  Map<int, Set<ItemBadge>> _badges = {};
   StockFilter _filter = StockFilter.all;
   ShelfSort _sort = ShelfSort.alpha;
   bool _loading = false;
 
   List<Item> get items => _items;
-  Map<int, Set<ItemBadge>> get badges => _badges;
 
   StockFilter get filter => _filter;
   ShelfSort get sort => _sort;
@@ -105,10 +78,8 @@ class InventoryProvider extends ChangeNotifier {
           _items.where((i) => i.usageType != UsageType.ingredientOnly).toList(),
       StockFilter.ingredients => _items.where((i) => i.isIngredient).toList(),
       StockFilter.lowOrOut => _items.where(isLowOrOut).toList(),
-      StockFilter.cold => _items
-          .where((i) => i.stockStatus == StockStatus.cold ||
-              (_badges[i.id]?.contains(ItemBadge.cold) ?? false))
-          .toList(),
+      StockFilter.cold =>
+          _items.where((i) => i.stockStatus == StockStatus.cold).toList(),
     };
     return _applySort(list);
   }
@@ -155,7 +126,6 @@ class InventoryProvider extends ChangeNotifier {
     notifyListeners();
     try {
       _items = await _db.getAllItems(newestFirst: false);
-      await _loadBadges();
     } catch (e, s) {
       logError('load-inventory', e, s);
     }
@@ -164,47 +134,7 @@ class InventoryProvider extends ChangeNotifier {
   }
 
 
-  String _normalize(String name) => name.trim().toLowerCase();
 
-  Future<void> _loadBadges() async {
-    try {
-      final now = DateTime.now();
-      final since7 = now.subtract(const Duration(days: 7)).toIso8601String();
-      final since14 = now.subtract(const Duration(days: 14)).toIso8601String();
-      final newCutoff = now.subtract(const Duration(days: 7)).toIso8601String();
-
-      final counts7 = await _db.getItemSaleCountsSince(since7);
-      final counts14 = await _db.getItemSaleCountsSince(since14);
-
-      final result = <int, Set<ItemBadge>>{};
-      for (final item in _items) {
-        if (item.id == null) continue;
-        final badges = <ItemBadge>{};
-        final c7 = counts7[_normalize(item.name)] ?? 0;
-        final c14 = counts14[_normalize(item.name)] ?? 0;
-        final prevWeek = c14 - c7;
-
-        if (DateTime.tryParse(item.createdAt)
-                ?.isAfter(DateTime.parse(newCutoff)) ??
-            false) {
-          badges.add(ItemBadge.fresh);
-        } else {
-          if (c7 >= 5) badges.add(ItemBadge.hot);
-          if (prevWeek >= 5 && c7 > 0 && c7 < 5) badges.add(ItemBadge.cooling);
-          // Existed before the observation window yet zero sales = cold.
-          if (c14 == 0 && item.createdAt.compareTo(since14) < 0) {
-            badges.add(ItemBadge.cold);
-          }
-        }
-        if (item.stockStatus == StockStatus.cold) badges.add(ItemBadge.cold);
-        if (badges.isNotEmpty) result[item.id!] = badges;
-      }
-      _badges = result;
-    } catch (e, s) {
-      logError('load-badges', e, s);
-      _badges = {};
-    }
-  }
 
 
   // ─── Shelf actions ─────────────────────────────────────────────────
@@ -256,6 +186,19 @@ class InventoryProvider extends ChangeNotifier {
       logError('delete-item', e, s);
     }
   }
+
+  /// Direct status set (Shelf long-press quick actions).
+  Future<void> setStockStatus(int itemId, StockStatus status) async {
+    try {
+      await _db.updateItemStockStatus(itemId, status.dbValue);
+      await loadInventory();
+    } catch (e, s) {
+      logError('set-stock-status', e, s);
+    }
+  }
+
+  /// Recent-first customer list for Add Credit suggestions.
+  Future<List<Customer>> recentCustomers() => _db.getCustomersByRecent();
 
   Future<void> restock(List<int> itemIds) async {
     try {

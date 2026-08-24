@@ -4,6 +4,7 @@ import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
 import '../utils/date_format.dart';
 import '../utils/pay_flow.dart';
+import '../utils/snackbars.dart';
 import 'add_credit_sheet.dart';
 import 'customer_detail_screen.dart';
 
@@ -120,19 +121,79 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                       return _GroupedTile(g: g, onOpen: () => _openCustomerDetail(context, g));
                     } else {
                       final t = _filteredIndividual(provider)[index];
-                      return _TransactionTile(
-                        t: t,
-                        onOpenCustomer: () => _openCustomerDetail(
-                            context,
-                            GroupedCustomer(
-                              customerId: t.customerId,
-                              customerName: t.customerName,
-                              totalAmount: 0,
-                              paidAmount: 0,
-                              transactionCount: 0,
-                              oldestDate: t.date,
-                              latestDate: t.date,
-                            )),
+                      return Dismissible(
+                        key: ValueKey(t.id),
+                        direction: DismissDirection.startToEnd,
+                        background: Container(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 20),
+                          color: Colors.green.shade600,
+                          child: const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.payments, color: Colors.white),
+                              SizedBox(height: 2),
+                              Text('Fully paid',
+                                  style: TextStyle(
+                                      color: Colors.white, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        confirmDismiss: (_) async {
+                          final priorPaid = t.paidAmount;
+                          final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title:
+                                  Text('Mark ${t.customerName} fully paid?'),
+                              content: Text(
+                                  'Remaining ${formatCurrency(t.remaining)} '
+                                  'will be settled.'),
+                              actions: [
+                                TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(ctx, false),
+                                    child: const Text('Cancel')),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.green.shade700),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Yes, fully paid'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (ok != true) return false;
+                          await provider.processPayment(t.id, t.remaining);
+                          if (!context.mounted) return false;
+                          showAutoDismissSnackBar(
+                            ScaffoldMessenger.of(context),
+                            message:
+                                '${t.customerName} fully paid · ${formatCurrency(t.remaining)}',
+                            action: SnackBarAction(
+                              label: 'Undo',
+                              onPressed: () => provider
+                                  .reversePayment(t.id, priorPaid == 0
+                                      ? t.remaining
+                                      : t.paidAmount),
+                            ),
+                          );
+                          return false;
+                        },
+                        child: _TransactionTile(
+                          t: t,
+                          onOpenCustomer: () => _openCustomerDetail(
+                              context,
+                              GroupedCustomer(
+                                customerId: t.customerId,
+                                customerName: t.customerName,
+                                totalAmount: 0,
+                                paidAmount: 0,
+                                transactionCount: 0,
+                                oldestDate: t.date,
+                                latestDate: t.date,
+                              )),
+                        ),
                       );
                     }
                   },

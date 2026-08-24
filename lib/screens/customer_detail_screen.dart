@@ -30,6 +30,39 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     _load();
   }
 
+  Future<void> _payAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Mark all ${widget.customerName} receipts paid?'),
+        content: Text(
+            '${_transactions.length} receipt(s), remaining '
+            '${formatCurrency(_totalOutstanding)}.\n\n'
+            'This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes, all paid'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await context
+        .read<TransactionsProvider>()
+        .markAllPaidForCustomer(widget.customerId);
+    if (!mounted) return;
+    await _load();
+    if (!mounted || result == null) return;
+    final (count, collected) = result;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+          '$count receipt(s) settled · ${formatCurrency(collected)} collected'),
+    ));
+  }
+
   Future<bool> _confirmDelete(ActiveTransaction t) async {
     HapticFeedback.mediumImpact();
     final confirmed = await showDialog<bool>(
@@ -103,19 +136,39 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                         color: Colors.teal.shade50,
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Column(
                             children: [
-                              Text('Total Outstanding',
-                                  style: TextStyle(
-                                      fontSize: 16, color: Colors.grey.shade800)),
-                              Text(
-                                formatCurrency(_totalOutstanding),
-                                style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.teal.shade900),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Total Outstanding',
+                                      style: TextStyle(
+                                          fontSize: 16,
+                                          color: Colors.grey.shade800)),
+                                  Text(
+                                    formatCurrency(_totalOutstanding),
+                                    style: TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.teal.shade900),
+                                  ),
+                                ],
                               ),
+                              if (_totalOutstanding > 0) ...[
+                                const SizedBox(height: 10),
+                                FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.green.shade700,
+                                    foregroundColor: Colors.white,
+                                    minimumSize:
+                                        const Size.fromHeight(42),
+                                  ),
+                                  onPressed: _payAll,
+                                  icon: const Icon(Icons.payments, size: 18),
+                                  label: const Text('Mark all as paid'),
+                                ),
+                              ],
                             ],
                           ),
                         ),

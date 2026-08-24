@@ -269,11 +269,6 @@ void main() {
 
       await inv.loadInventory();
 
-      expect(inv.badges[hotId]?.contains(ItemBadge.hot) ?? false, isTrue,
-          reason: '6 sales this week = hot');
-      expect(inv.badges.containsKey(lowId), isTrue,
-          reason: 'low item with zero sales = cold badge');
-
       inv.setFilter(StockFilter.lowOrOut);
       expect(inv.filteredItems.any((i) => i.id == lowId), isTrue);
       expect(inv.filteredItems.any((i) => i.id == hotId), isFalse,
