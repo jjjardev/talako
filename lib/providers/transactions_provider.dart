@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
-import '../models/dish.dart';
 import '../utils/app_logger.dart';
 
 class TransactionItemLine {
@@ -217,46 +216,6 @@ class TransactionsProvider extends ChangeNotifier {
     return txnId;
   }
 
-  /// Records a credit that may include dish sales. EVERY line whose name
-  /// matches a defined dish is stamped with that dish's id + unit_capital,
-  /// so margins and per-dish analytics cover multi-dish receipts too.
-  Future<int> addDishTransaction(
-    int customerId,
-    List<String> itemNames,
-    List<int> quantities,
-    List<double> prices, {
-    Dish? dish,
-  }) async {
-    final allDishes = await _db.getAllDishes();
-    final byLowerName = {for (final d in allDishes) d.name.toLowerCase(): d};
-
-    final items = <Map<String, dynamic>>[];
-    Dish? firstMatched;
-    for (int i = 0; i < itemNames.length; i++) {
-      final subtotal = quantities[i] * prices[i];
-      final matched = dish != null &&
-              itemNames[i].trim().toLowerCase() == dish.name.toLowerCase()
-          ? dish
-          : byLowerName[itemNames[i].trim().toLowerCase()];
-      firstMatched ??= matched;
-      logInfo('stamp "${itemNames[i]}" -> ${matched?.name ?? "NO MATCH"}');
-      items.add({
-        'item_name': itemNames[i],
-        'quantity': quantities[i],
-        'price': prices[i],
-        'subtotal': subtotal.toDouble(),
-        if (matched != null) 'dish_id': matched.id,
-        if (matched != null) 'unit_capital': matched.capital,
-      });
-    }
-    final txnId = await _db.insertTransactionWithItems(
-      customerId,
-      items,
-      dishId: (dish ?? firstMatched)?.id,
-    );
-    await loadActiveTransactions();
-    return txnId;
-  }
 
   Future<void> processPayment(int transactionId, double amount) async {
     try {

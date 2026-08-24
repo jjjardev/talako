@@ -39,10 +39,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           'Glance at your shelf and tap items to mark them Well Stocked, Running Low, Out of Stock or Cold.\n\nNo counting - a 30-second scan is enough.',
     ),
     _PageData(
-      icon: Icons.soup_kitchen_outlined,
-      title: 'Menu & Shopping List',
+      icon: Icons.shopping_basket_outlined,
+      title: 'Shopping List',
       body:
-          'Set your dishes with cost and price, then tap to record every sale.\n\nThe Shopping List builds itself - share it before heading to the market.',
+          'Mark items Running Low or Out of Stock and the Shopping List builds itself.\n\nShare it before heading to the market.',
     ),
     _PageData(
       icon: Icons.settings,

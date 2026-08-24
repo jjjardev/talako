@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
-import '../models/dish.dart';
 import '../models/item.dart';
 import '../providers/customers_provider.dart';
 import '../providers/inventory_provider.dart';
@@ -26,7 +25,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
   List<String> _customerSuggestions = [];
   List<String> _itemSuggestions = [];
-  Map<String, Dish> _dishesByName = {};
   Map<String, Item> _itemsByLowerName = {};
   final List<_LineItem> _items = [];
   bool _saving = false;
@@ -41,19 +39,12 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   Future<void> _loadSuggestions() async {
     final customers = await _db.getAllCustomers();
     final itemNames = await _db.getAllItemNames();
-    final dishes = await _db.getAllDishes();
     final items = await _db.getAllItems(newestFirst: false);
     if (!mounted) return;
     setState(() {
       _customerSuggestions = customers.map((c) => c.name).toList();
-      _itemSuggestions = [...itemNames, ...dishes.map((d) => d.name)]
-        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      _dishesByName = {
-        for (final d in dishes) d.name.toLowerCase(): d,
-      };
-      _itemsByLowerName = {
-        for (final i in items) i.name.toLowerCase(): i,
-      };
+      _itemSuggestions = itemNames;
+      _itemsByLowerName = {for (final i in items) i.name.toLowerCase(): i};
     });
   }
 
@@ -62,7 +53,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     if (line.priceTouched) return;
     final key = rawName.trim().toLowerCase();
     if (key.isEmpty) return;
-    double? price = _dishesByName[key]?.price ?? _itemsByLowerName[key]?.price;
+    final price = _itemsByLowerName[key]?.price;
     if (price == null || price <= 0) return;
     line.price = price;
     line.priceController.text = _formatPlain(price);
@@ -123,12 +114,9 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
     final txnProvider = context.read<TransactionsProvider>();
     try {
-      final txnId = await txnProvider.addDishTransaction(
-        customer.id!,
-        itemNames,
-        quantities,
-        prices,
-      );
+      final txnId =
+          await txnProvider.addTransactionWithItemNames(
+              customer.id!, itemNames, quantities, prices);
       if (mounted) {
         setState(() => _saving = false);
         // Capture everything needed before popping - after Navigator.pop

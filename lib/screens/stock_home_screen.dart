@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'kitchen_screen.dart';
 import 'shopping_list_screen.dart';
 import 'stock_watch_screen.dart';
 import '../providers/inventory_provider.dart';
 
-/// Which view is active inside the Stock tab. Owned by MainShell so the
-/// FAB can adapt to context (Add Item on Shelf, New Dish in Kitchen).
-enum StockSegment { shelf, kitchen, shopping }
+/// Which view is active inside the Stock tab.
+enum StockSegment { shelf, shopping }
 
 class StockHomeScreen extends StatelessWidget {
   final ValueNotifier<StockSegment> segment;
@@ -44,13 +42,10 @@ class StockHomeScreen extends StatelessWidget {
                 segments: const [
                   ButtonSegment(value: StockSegment.shelf, label: Text('Shelf')),
                   ButtonSegment(
-                      value: StockSegment.kitchen, label: Text('Kitchen')),
-                  ButtonSegment(
                       value: StockSegment.shopping, label: Text('Shopping')),
                 ],
                 selected: {s},
-                onSelectionChanged: (sel) =>
-                    segment.value = sel.first,
+                onSelectionChanged: (sel) => segment.value = sel.first,
               ),
             ),
           ),
@@ -59,7 +54,6 @@ class StockHomeScreen extends StatelessWidget {
               valueListenable: segment,
               builder: (context, s, _) => switch (s) {
                 StockSegment.shelf => const StockWatchScreen(),
-                StockSegment.kitchen => const KitchenScreen(),
                 StockSegment.shopping => const ShoppingListScreen(),
               },
             ),

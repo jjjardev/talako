@@ -3,8 +3,8 @@ import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talako/database/database_helper.dart';
 import 'package:talako/models/customer.dart';
-import 'package:talako/models/dish.dart';
 import 'package:talako/models/item.dart';
+import 'package:talako/models/spoilage_entry.dart';
 import 'package:talako/models/stock_enums.dart';
 import 'package:talako/providers/inventory_provider.dart';
 
@@ -80,8 +80,6 @@ void main() {
       expect(migrated.usageType, UsageType.retailOnly);
 
       // New tables exist and are usable.
-      final dishId = await db.insertDish(Dish(name: 'Migration Dish', price: 50));
-      expect(dishId, greaterThan(0));
       final spoilageId = await db.insertSpoilage(SpoilageEntry(
         itemId: migrated.id!,
         estimatedValue: 10.0,
@@ -120,17 +118,13 @@ void main() {
     });
   });
 
-  group('dishes', () {
-    test('CRUD works without ingredient linking', () async {
+  group('dishes schema', () {
+    test('legacy dishes table remains usable but unused by app flows', () async {
       final db = DatabaseHelper.instance;
-      final id =
-          await db.insertDish(Dish(name: 'Simple Dish', price: 80, capital: 40));
-      var dish = (await db.getAllDishes()).firstWhere((d) => d.id == id);
-      expect(dish.name, 'Simple Dish');
-      expect(dish.margin, 40.0);
-
-      await db.deleteDish(id);
-      expect((await db.getAllDishes()).any((d) => d.id == id), isFalse);
+      // The v5-era table stays on disk (rollback safety) - nothing writes it.
+      final tables = await (await db.database)
+          .rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='dishes'");
+      expect(tables, isNotEmpty);
     });
   });
 

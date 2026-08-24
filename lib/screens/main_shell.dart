@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'collections_screen.dart';
 import 'settings_screen.dart';
 import 'stock_home_screen.dart';
-import 'add_edit_dish_screen.dart';
 import 'add_item_sheet.dart';
 import 'add_credit_sheet.dart';
 import '../providers/transactions_provider.dart';
@@ -90,40 +89,18 @@ class _MainShellState extends State<MainShell> {
       );
     }
     if (index == 1) {
-      // Context-aware: the + means whatever the current Stock view is about.
-      return ValueListenableBuilder<StockSegment>(
-        valueListenable: _stockSegment,
-        builder: (context, segment, _) {
-          if (segment == StockSegment.shopping) return const SizedBox.shrink();
-          if (segment == StockSegment.kitchen) {
-            return FloatingActionButton.extended(
-              heroTag: 'fab_new_dish',
-              onPressed: () {
-                final inv = context.read<InventoryProvider>();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AddEditDishScreen()),
-                ).then((_) => inv.loadInventory());
-              },
-              icon: const Icon(Icons.restaurant_menu),
-              label: const Text('New Dish'),
-            );
-          }
-          return FloatingActionButton(
-            heroTag: 'fab_add_item',
-            tooltip: 'Add item',
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              useSafeArea: true,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              builder: (_) => const AddItemSheet(),
-            ),
-            child: const Icon(Icons.add),
-          );
-        },
+      return FloatingActionButton(
+        tooltip: 'Add item',
+        onPressed: () => showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (_) => const AddItemSheet(),
+        ),
+        child: const Icon(Icons.add),
       );
     }
     return null;

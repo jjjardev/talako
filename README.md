@@ -1,6 +1,6 @@
 # TalaKo — Offline Credit Management for Small Stores
 
-**Track debts. Sell dishes with one tap. Never lose a notebook again.**
+**Track debts. Never lose a notebook again.**
 
 TalaKo is an **offline-first** Android app for small store owners who sell on credit — and for carinderias that want to know their profit per plate. No internet needed. No account required.
 
@@ -69,16 +69,14 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 3. **Add a credit** — tap the + FAB on the Credit Book, type customer name and items, set quantity and price
 4. **Track debts** — the Credit Book shows all active debts with item breakdowns
 5. **Record payments** — tap the green Pay button on any tile, enter amount on the numpad
-6. **Set up your menu** — Stock tab → Menu → New Dish: add cost and price, then tap a card to record each sale
-7. **Shelf scan** — every morning, tap items that changed status; the Shopping List builds itself
-8. **Back up regularly** — go to Settings, export a backup
+6. **Shelf scan** — every morning, tap items that changed status; the Shopping List builds itself
+7. **Back up regularly** — go to Settings, export a backup
 
 ---
 
 ## Target Users
 
 - **Sari-sari store owners** who sell on credit to regular customers
-- **Carinderia owners** tracking dish sales, capital vs price, and daily profit
 - **Tricycle operators** tracking daily boundary payments from drivers
 - **Rice retailers** tracking kilo-based credit
 - **Water refilling stations** tracking customer deposits and refills

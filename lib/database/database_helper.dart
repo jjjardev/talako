@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import 'package:path/path.dart';
-import '../models/dish.dart';
+import '../models/spoilage_entry.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
 import '../models/transaction.dart';
@@ -653,71 +653,14 @@ class DatabaseHelper {
 
   // ─── Dishes ─────────────────────────────────────────────────────────
 
-  Future<int> insertDish(Dish dish) async {
-    final db = await database;
-    return await db.insert('dishes', dish.toMap());
-  }
-
-  Future<int> updateDish(Dish dish) async {
-    final db = await database;
-    return await db.update(
-      'dishes',
-      dish.toMap(),
-      where: 'id = ?',
-      whereArgs: [dish.id],
-    );
-  }
-
-  Future<int> deleteDish(int dishId) async {
-    final db = await database;
-    return await db.delete('dishes', where: 'id = ?', whereArgs: [dishId]);
-  }
-
-  Future<Dish?> getDishById(int dishId) async {
-    final db = await database;
-    final result = await db.query('dishes', where: 'id = ?', whereArgs: [dishId]);
-    if (result.isEmpty) return null;
-    return Dish.fromMap(result.first);
-  }
-
-  Future<List<Dish>> getAllDishes() async {
-    final db = await database;
-    final result = await db.query('dishes', orderBy: 'name ASC');
-    return result.map(Dish.fromMap).toList();
-  }
 
 
-  Future<List<int>> getDishIngredientIds(int dishId) async {
-    final db = await database;
-    final result = await db.query(
-      'dish_ingredients',
-      columns: ['item_id'],
-      where: 'dish_id = ?',
-      whereArgs: [dishId],
-    );
-    return result.map((r) => r['item_id'] as int).toList();
-  }
+
+
+
+
 
   /// One query for all ingredients of many dishes; stitched by dish in Dart.
-  /// JOINs through `dishes` so links orphaned by pre-FK databases are ignored.
-  Future<Map<int, List<Item>>> getIngredientsForDishes(List<int> dishIds) async {
-    if (dishIds.isEmpty) return {};
-    final db = await database;
-    final placeholders = List.filled(dishIds.length, '?').join(',');
-    final result = await db.rawQuery('''
-      SELECT di.dish_id, i.*
-      FROM dish_ingredients di
-      INNER JOIN dishes d ON d.id = di.dish_id
-      INNER JOIN items i ON i.id = di.item_id
-      WHERE di.dish_id IN ($placeholders)
-      ORDER BY di.id ASC
-    ''', dishIds);
-    final map = <int, List<Item>>{};
-    for (final row in result) {
-      map.putIfAbsent(row['dish_id'] as int, () => []).add(Item.fromMap(row));
-    }
-    return map;
-  }
 
   // ─── Spoilage ───────────────────────────────────────────────────────
 
@@ -795,23 +738,6 @@ class DatabaseHelper {
   }
 
   /// Per-dish sales breakdown for one calendar day ([dayStart] inclusive,
-  /// [dayEnd] exclusive).
-  Future<List<Map<String, dynamic>>> getDishRecapForDay(
-      String dayStart, String dayEnd) async {
-    final db = await database;
-    return await db.rawQuery('''
-      SELECT ti.dish_id AS dish_id, d.name AS name, d.price AS price,
-        COALESCE(SUM(ti.quantity), 0) AS plates,
-        COALESCE(SUM(ti.price * ti.quantity), 0) AS sales
-      FROM transaction_items ti
-      INNER JOIN transactions t ON t.id = ti.transaction_id
-      INNER JOIN dishes d ON d.id = ti.dish_id
-      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0
-        AND t.date >= ? AND t.date < ?
-      GROUP BY ti.dish_id
-      ORDER BY plates DESC
-    ''', [dayStart, dayEnd]);
-  }
 
   /// Deletes today's cash tap-sales only. Credit receipts are structurally
   /// untouched. Returns rows removed.
@@ -930,54 +856,8 @@ class DatabaseHelper {
   // ─── Menu sales (cash taps + credit dish lines) ─────────────────────
 
   /// Combined Today-style summary across BOTH channels: instant cash taps
-  /// and dishes sold on a customer's credit. Owner consumption excluded.
-  Future<Map<String, double>> getMenuSummarySince(String isoSince) async {
-    final db = await database;
-    final result = await db.rawQuery('''
-      SELECT
-        COALESCE(SUM(ti.price * ti.quantity), 0) AS sales,
-        COALESCE(SUM(ti.quantity), 0) AS plates
-      FROM transaction_items ti
-      INNER JOIN transactions t ON t.id = ti.transaction_id
-      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0 AND t.date >= ?
-    ''', [isoSince]);
-    final row = result.first;
-    return {
-      'sales': (row['sales'] as num).toDouble(),
-      'plates': (row['plates'] as num).toDouble(),
-    };
-  }
 
-  /// All-time revenue for each dish - tracks puhunan recovery.
-  Future<Map<int, double>> getDishRevenueAllTime() async {
-    final db = await database;
-    final result = await db.rawQuery('''
-      SELECT ti.dish_id AS did, COALESCE(SUM(ti.price * ti.quantity), 0) AS revenue
-      FROM transaction_items ti
-      INNER JOIN transactions t ON t.id = ti.transaction_id
-      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0
-      GROUP BY ti.dish_id
-    ''');
-    return {
-      for (final row in result)
-        row['did'] as int: (row['revenue'] as num).toDouble(),
-    };
-  }
 
-  /// Served counts per dish since [isoSince] - keyed by dish id.
-  Future<Map<int, int>> getDishSaleCountsSince(String isoSince) async {
-    final db = await database;
-    final result = await db.rawQuery('''
-      SELECT ti.dish_id AS did, COALESCE(SUM(ti.quantity), 0) AS cnt
-      FROM transaction_items ti
-      INNER JOIN transactions t ON t.id = ti.transaction_id
-      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0 AND t.date >= ?
-      GROUP BY ti.dish_id
-    ''', [isoSince]);
-    return {
-      for (final row in result) row['did'] as int: row['cnt'] as int,
-    };
-  }
 
   Future<List<TransactionItem>> getItemsByTransaction(int transactionId) async {
     final db = await database;
