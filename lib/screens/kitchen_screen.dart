@@ -8,6 +8,7 @@ import '../utils/currency_format.dart';
 import '../utils/snackbars.dart';
 import 'add_edit_dish_screen.dart';
 import 'close_out_sheet.dart';
+import 'tally_sheet.dart';
 import '../widgets/alphabet_strip.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -408,13 +409,37 @@ class _MenuTabState extends State<_MenuTab> {
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
           child: Row(
             children: [
-              Text('${dishes.length} dishes · tap = sell · hold = edit',
+              Text('${dishes.length} dishes',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
               const Spacer(),
-              TextButton.icon(
+              FilledButton.tonalIcon(
+                onPressed: dishes.isEmpty
+                    ? null
+                    : () async {
+                        await showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          useSafeArea: true,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.vertical(top: Radius.circular(20)),
+                          ),
+                          builder: (_) => const TallySheet(),
+                        );
+                        if (context.mounted) {
+                          await context
+                              .read<InventoryProvider>()
+                              .loadInventory();
+                          _refreshToday();
+                        }
+                      },
+                icon: const Icon(Icons.fact_check_outlined, size: 18),
+                label: const Text('Tally today'),
+              ),
+              IconButton(
+                tooltip: 'Add dish',
                 onPressed: () => _openEditor(),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('New Dish'),
+                icon: const Icon(Icons.add_circle_outline),
               ),
             ],
           ),

@@ -409,6 +409,44 @@ class InventoryProvider extends ChangeNotifier {
     return DateTime(now.year, now.month, now.day);
   }
 
+  /// Bulk end-of-day tally: records [counts] (dishId -> plates sold today)
+  /// as ONE settled cash transaction. Returns its id, or null when there is
+  /// nothing to record. Recovery bars and served counts update via reload.
+  Future<int?> saveTally(Map<int, int> counts) async {
+    final entries = counts.entries.where((e) => e.value > 0).toList();
+    if (entries.isEmpty) return null;
+    try {
+      var customer = await _db.getCustomerByName('Cash Sales');
+      customer ??= await _db.getCustomerById(
+          await _db.insertCustomer(Customer(name: 'Cash Sales')));
+      final customerId = customer?.id;
+      if (customerId == null) return null;
+
+      final lines = <Map<String, dynamic>>[];
+      for (final e in entries) {
+        final d = dishByIdOf(e.key);
+        if (d == null) continue;
+        lines.add({
+          'item_name': d.name,
+          'quantity': e.value,
+          'price': d.price,
+          'subtotal': roundMoney(d.price * e.value),
+          'dish_id': d.id,
+        });
+      }
+      if (lines.isEmpty) return null;
+      final txnId = await _db.insertTransactionWithItems(
+          customerId, lines,
+          isCashSale: true);
+      await loadInventory();
+      logInfo('tally #$txnId ${lines.length} dishes recorded');
+      return txnId;
+    } catch (e, s) {
+      logError('save-tally', e, s);
+      return null;
+    }
+  }
+
   // ─── End of Day ─────────────────────────────────────────────────────
 
   /// Yesterday's recap waiting to be shown, if a day closed unhandled.

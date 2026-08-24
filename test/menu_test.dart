@@ -373,6 +373,73 @@ void main() {
     });
   });
 
+  group('daily tally', () {
+    test('bulk tally records one hidden receipt with stamped lines',
+        () async {
+      final db = DatabaseHelper.instance;
+      final inv = InventoryProvider();
+      await inv.loadInventory();
+
+      final before = await inv.todaySummary();
+      final tapsi = inv.dishes.firstWhere((d) => d.name == 'Tapsilog');
+      final txnId = await inv.saveTally({
+        tapsi.id!: 5,
+      });
+      expect(txnId, isNotNull);
+
+      // Hidden from Credit Book.
+      final bookRows = await db.getActiveTransactionsWithCustomer();
+      expect(bookRows.any((r) => r['id'] == txnId), isFalse);
+
+      // Settled cash semantics.
+      final txn = (await (await db.database)
+          .query('transactions', where: 'id = ?', whereArgs: [txnId])).first;
+      expect(txn['is_cash_sale'], 1);
+      expect(txn['status'], 'PAID');
+
+      // Summary delta: 5 plates x 75 = 375 output.
+      final after = await inv.todaySummary();
+      expect(after['plates'], before['plates']! + 5);
+      expect(after['sales'], closeTo(before['sales']! + 375.0, 0.001));
+
+      // Served counts bump for the dish.
+      final tapsiRow = inv.dishes.firstWhere((d) => d.name == 'Tapsilog');
+      expect(inv.servedToday[tapsiRow.id] ?? 0, greaterThanOrEqualTo(5));
+    });
+
+    test('all-zero tally records nothing', () async {
+      final inv = InventoryProvider();
+      await inv.loadInventory();
+      final tapsi = inv.dishes.firstWhere((d) => d.name == 'Tapsilog');
+      final before = await inv.todaySummary();
+
+      final result = await inv.saveTally({});
+      expect(result, isNull);
+
+      final zero = await inv.saveTally({tapsi.id!: 0});
+      expect(zero, isNull);
+
+      final after = await inv.todaySummary();
+      expect(after['plates'], before['plates']);
+    });
+
+    test('undo removes a whole tally in one go', () async {
+      final inv = InventoryProvider();
+      await inv.loadInventory();
+      final tapsi = inv.dishes.firstWhere((d) => d.name == 'Tapsilog');
+      final before = await inv.todaySummary();
+
+      final txnId = await inv.saveTally({
+        tapsi.id!: 2,
+      });
+      expect(txnId, isNotNull);
+
+      await inv.deleteTapSale(txnId!);
+      final after = await inv.todaySummary();
+      expect(after['plates'], before['plates']);
+    });
+  });
+
   group('alphabet index', () {
     test('letterOffsets maps first occurrence and buckets symbols', () {
       final offsets = AlphabetStrip.letterOffsets(
