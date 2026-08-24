@@ -111,6 +111,65 @@ void main() {
     });
   });
 
+  group('legacy Sari v1 backup import', () {
+    test('credits become transactions; app name Sari accepted', () async {
+      final db = DatabaseHelper.instance;
+      final legacyBackup = {
+        'app': 'Sari',
+        'version': 1,
+        'exported_at': '2026-07-21T02:48:56.255988',
+        'items': [
+          {'id': 3, 'name': 'Siomai', 'price': 5.0, 'created_at': '2026-07-20T11:44:45.968292'},
+        ],
+        'customers': [
+          {'id': 1, 'name': 'edward', 'created_at': '2026-07-19T01:06:37.251002'},
+          {'id': 2, 'name': 'Batik', 'created_at': '2026-07-19T01:56:56.854783'},
+        ],
+        'credits': [
+          {
+            'id': 1,
+            'customer_id': 1,
+            'item_name': 'magic',
+            'quantity': 1,
+            'price_per_unit': 100.0,
+            'total': 100.0,
+            'paid_amount': 100.0,
+            'timestamp': '2026-07-19T01:06:37.350307',
+          },
+          {
+            'id': 2,
+            'customer_id': 2,
+            'item_name': 'Native Coffee',
+            'quantity': 2,
+            'price_per_unit': 15.0,
+            'total': 30.0,
+            'paid_amount': 0.0,
+            'timestamp': '2026-07-19T01:56:56.854783',
+          },
+        ],
+      };
+
+      await db.importBackup(legacyBackup);
+
+      // Items/customers restored.
+      expect((await db.getAllItems()).any((i) => i.name == 'Siomai'), isTrue);
+
+      // Credits became transactions with correct paid/status semantics.
+      final txns = await (await db.database).query('transactions', orderBy: 'id');
+      expect(txns.length, 2);
+      final paidTxn = txns.firstWhere((t) => (t['paid_amount'] as num).toDouble() == 100.0);
+      expect(paidTxn['status'], 'PAID');
+      expect(paidTxn['is_owner_consumption'], 0);
+      final unpaidTxn = txns.firstWhere((t) => (t['paid_amount'] as num).toDouble() == 0.0);
+      expect(unpaidTxn['status'], 'ACTIVE');
+
+      // Lines carry the historical item names.
+      final lineRows = await (await db.database)
+          .query('transaction_items');
+      expect(lineRows.length, 2);
+    });
+  });
+
   group('TransactionsProvider stitching', () {
     late int commaCustomerId;
 

@@ -1024,8 +1024,11 @@ class DatabaseHelper {
     };
   }
 
+  /// Accepts current TalaKo backups plus legacy ones from the pre-rename
+  /// "Sari" v1 era (flat `credits` table instead of transactions).
   Future<void> importBackup(Map<String, dynamic> data) async {
-    if (data['app'] != 'TalaKo') {
+    final appName = data['app']?.toString() ?? '';
+    if (appName != 'TalaKo' && appName != 'Sari') {
       throw Exception('Not a valid TalaKo backup file');
     }
     final db = await database;
@@ -1068,6 +1071,29 @@ class DatabaseHelper {
       if (data.containsKey('spoilage_log')) {
         for (final entry in (data['spoilage_log'] as List)) {
           await txn.insert('spoilage_log', entry as Map<String, dynamic>);
+        }
+      }
+      // Legacy "Sari" v1 backups: flat credits table becomes one
+      // transaction + line per credit, preserving paid amounts.
+      if (!data.containsKey('transactions') && data.containsKey('credits')) {
+        for (final c in (data['credits'] as List)) {
+          final credit = c as Map<String, dynamic>;
+          final total = (credit['total'] as num).toDouble();
+          final paid = (credit['paid_amount'] as num).toDouble();
+          final txnId = await txn.insert('transactions', {
+            'customer_id': credit['customer_id'],
+            'date': credit['timestamp'],
+            'total_amount': total,
+            'paid_amount': paid,
+            'status': paid >= total ? 'PAID' : 'ACTIVE',
+          });
+          await txn.insert('transaction_items', {
+            'transaction_id': txnId,
+            'item_name': credit['item_name'],
+            'quantity': credit['quantity'],
+            'price': credit['price_per_unit'],
+            'subtotal': total,
+          });
         }
       }
       if (data.containsKey('dish_leftovers')) {

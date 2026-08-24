@@ -223,6 +223,7 @@ class _MenuTab extends StatefulWidget {
 
 class _MenuTabState extends State<_MenuTab> {
   Map<String, double>? _today;
+  double? _manualOutput;
 
   @override
   void initState() {
@@ -236,9 +237,62 @@ class _MenuTabState extends State<_MenuTab> {
   }
 
   Future<void> _refreshToday() async {
-    final summary = await context.read<InventoryProvider>().todaySummary();
+    final inv = context.read<InventoryProvider>();
+    final summary = await inv.todaySummary();
+    final manual = await inv.manualOutputFor(DateTime.now());
     if (!mounted) return;
-    setState(() => _today = summary);
+    setState(() {
+      _today = summary;
+      _manualOutput = manual;
+    });
+  }
+
+  Future<void> _editOutput() async {
+    final current = _manualOutput ?? _today?['sales'] ?? 0;
+    final controller =
+        TextEditingController(text: current.toStringAsFixed(2));
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Adjust today\'s output'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            prefixText: '₱ ',
+            border: OutlineInputBorder(),
+            helperText: 'Leave empty to use the computed total',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              context
+                  .read<InventoryProvider>()
+                  .setManualOutput(DateTime.now(), null);
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Use computed'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final v = double.tryParse(controller.text.trim());
+    await context
+        .read<InventoryProvider>()
+        .setManualOutput(DateTime.now(), (v != null && v > 0) ? v : null);
+    if (!mounted) return;
+    showAutoDismissSnackBar(ScaffoldMessenger.of(context),
+        message: 'Today output adjusted');
+    await _refreshToday();
   }
 
   Future<void> _undoLast() async {
@@ -343,6 +397,8 @@ class _MenuTabState extends State<_MenuTab> {
           ),
         _TodayStrip(
           today: _today,
+          manualOutput: _manualOutput,
+          onEditOutput: _editOutput,
           canUndo: (_today?['plates'] ?? 0) > 0,
           onUndo: _undoLast,
           onReset: _resetTaps,
@@ -422,6 +478,8 @@ class _MenuTabState extends State<_MenuTab> {
 
 class _TodayStrip extends StatelessWidget {
   final Map<String, double>? today;
+  final double? manualOutput;
+  final VoidCallback onEditOutput;
   final bool canUndo;
   final VoidCallback onUndo;
   final VoidCallback onReset;
@@ -429,6 +487,8 @@ class _TodayStrip extends StatelessWidget {
 
   const _TodayStrip({
     required this.today,
+    required this.manualOutput,
+    required this.onEditOutput,
     required this.canUndo,
     required this.onUndo,
     required this.onReset,
@@ -437,7 +497,7 @@ class _TodayStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sales = today?['sales'] ?? 0;
+    final effectiveSales = (manualOutput ?? today?['sales']) ?? 0;
     final plates = (today?['plates'] ?? 0).toInt();
 
     return Card(
@@ -454,12 +514,35 @@ class _TodayStrip extends StatelessWidget {
                 Text('Today',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
                 const SizedBox(width: 8),
-                Text(formatCurrency(sales),
+                Text(formatCurrency(effectiveSales),
                     style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
                         color: Colors.teal.shade900)),
-                const SizedBox(width: 6),
+                if (manualOutput != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, bottom: 4),
+                    child: Text('adjusted',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange.shade800)),
+                  ),
+                const SizedBox(width: 4),
+                SizedBox(
+                  height: 30,
+                  width: 30,
+                  child: IconButton(
+                    tooltip: 'Adjust output',
+                    padding: EdgeInsets.zero,
+                    iconSize: 16,
+                    style: IconButton.styleFrom(
+                        foregroundColor: Colors.teal.shade800),
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: onEditOutput,
+                  ),
+                ),
+                const Spacer(),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text('$plates plates sold',

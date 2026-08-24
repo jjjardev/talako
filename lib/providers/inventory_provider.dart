@@ -388,6 +388,22 @@ class InventoryProvider extends ChangeNotifier {
   Future<Map<String, double>> todaySummary() =>
       _db.getMenuSummarySince(_startOfToday().toIso8601String());
 
+  /// Owner-corrected earnings for [day] (null = use computed total).
+  Future<double?> manualOutputFor(DateTime day) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble('manual_output_${dateStr(day)}');
+  }
+
+  Future<void> setManualOutput(DateTime day, double? value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'manual_output_${dateStr(day)}';
+    if (value == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setDouble(key, value);
+    }
+  }
+
   static DateTime _startOfToday() {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
