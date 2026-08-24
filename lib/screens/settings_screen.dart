@@ -150,7 +150,11 @@ class SettingsScreen extends StatelessWidget {
       }
       final jsonString = const JsonEncoder.withIndent('  ').convert(data);
       final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/talako_backup.json');
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final stamp =
+          '${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}';
+      final file = File('${dir.path}/talako_backup_$stamp.json');
       await file.writeAsString(jsonString);
 
       if (context.mounted) {
@@ -202,7 +206,7 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         context.read<CustomersProvider>().loadCustomers();
         context.read<TransactionsProvider>().loadActiveTransactions();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored successfully')));
+        context.read<InventoryProvider>().loadInventory();        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored successfully')));
       }
     } catch (e, s) {
       logError("settings", e, s);
@@ -276,7 +280,7 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         context.read<CustomersProvider>().loadCustomers();
         context.read<TransactionsProvider>().loadActiveTransactions();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database restored successfully')));
+        context.read<InventoryProvider>().loadInventory();        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Database restored successfully')));
       }
     } catch (e, s) {
       logError("settings", e, s);

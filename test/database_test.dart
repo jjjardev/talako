@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talako/database/database_helper.dart';
 import 'package:talako/models/customer.dart';
+import 'package:talako/models/item.dart';
 import 'package:talako/providers/transactions_provider.dart';
 import 'package:talako/utils/money.dart';
 
@@ -193,6 +194,76 @@ void main() {
       expect(t.items[0].quantity, 3);
       expect(t.items[1].itemName, 'Softdrinks, 1L bottle');
       expect(t.remaining, 105.0);
+    });
+  });  group('backup round-trip (current format)', () {
+    test('export -> wipe -> import restores everything', () async {
+      final db = DatabaseHelper.instance;
+      final beforeRows =
+          await (await db.database).query('transactions');
+
+      // Seed distinct data.
+      final cust = await db.insertCustomer(Customer(name: 'RT Cust'));
+      final txnId = await db.insertTransactionWithItems(cust, [
+        {'item_name': 'RT Item', 'quantity': 2, 'price': 15.0, 'subtotal': 30.0},
+      ]);
+      await db.insertItem(Item(name: 'RT Stock Item', price: 20));
+
+      final exported = await db.exportBackup();
+      expect(exported, isNotNull);
+      expect(exported!['version'], 6);
+
+      // Wipe via an empty TalaKo backup.
+      await db.importBackup({
+        'app': 'TalaKo',
+        'version': 6,
+        'items': [],
+        'customers': [],
+        'transactions': [],
+        'transaction_items': [],
+      });
+      expect(await (await db.database).query('transactions'), isEmpty);
+      expect(await (await db.database).query('dishes'), isNotNull); // tables intact
+
+      // Restore.
+      await db.importBackup(exported);
+
+      final txns = await (await db.database).query('transactions');
+      // Export captured every prior row too - delta must be exactly our seed.
+      expect(txns.length, beforeRows.length + 1,
+          reason: 'wipe removed history, restore brought export contents back');
+      expect(txns.any((t) => t['id'] == txnId), isTrue);
+      final seeded = txns.firstWhere((t) => t['id'] == txnId);
+      expect(seeded['status'], 'ACTIVE');
+
+      final items = await db.getAllItems();
+      expect(items.any((i) => i.name == 'RT Stock Item'), isTrue);
+      expect((await db.getAllCustomers()).any((c) => c.name == 'RT Cust'),
+          isTrue);
+
+      // Lines restored with quantities.
+      final lines = await db.getItemsForTransactions([txnId]);
+      expect(lines.length, 1);
+      expect(lines.first.quantity, 2);
+    });
+
+    test('import rejects ledger-less junk before wiping', () async {
+      final db = DatabaseHelper.instance;
+      final beforeTxn =
+          await (await db.database).query('transactions');
+
+      await expectLater(
+        db.importBackup({
+          'app': 'TalaKo',
+          'version': 6,
+          'items': [],
+          'customers': [],
+        }),
+        throwsException,
+      );
+
+      final afterTxn = await (await db.database).query('transactions');
+      expect(afterTxn.length, beforeTxn.length,
+          reason: 'validation must run BEFORE the destructive wipe');
     });
   });
 }

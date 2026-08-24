@@ -937,7 +937,7 @@ class DatabaseHelper {
     final dishLeftovers = await db.query('dish_leftovers');
     return {
       'app': 'TalaKo',
-      'version': 4,
+      'version': 6,
       'exported_at': DateTime.now().toIso8601String(),
       'items': items,
       'customers': customers,
@@ -956,6 +956,13 @@ class DatabaseHelper {
     final appName = data['app']?.toString() ?? '';
     if (appName != 'TalaKo' && appName != 'Sari') {
       throw Exception('Not a valid TalaKo backup file');
+    }
+    if (!data.containsKey('transactions') &&
+        !data.containsKey('credits') &&
+        !data.containsKey('transaction_items')) {
+      // Guard against restoring arbitrary JSON that would silently wipe
+      // the live ledger.
+      throw Exception('Backup contains no ledger data');
     }
     final db = await database;
     await db.transaction((txn) async {
