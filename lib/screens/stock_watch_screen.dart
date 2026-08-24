@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/item.dart';
 import '../models/stock_enums.dart';
@@ -186,8 +187,10 @@ class _ItemCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: () =>
-            context.read<InventoryProvider>().cycleStockStatus(item.id!),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          context.read<InventoryProvider>().cycleStockStatus(item.id!);
+        },
         onLongPress: onEdit,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

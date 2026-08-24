@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../models/dish.dart';
 import '../utils/app_logger.dart';
@@ -67,17 +68,27 @@ class TransactionsProvider extends ChangeNotifier {
   List<GroupedCustomer> _groupedCustomers = [];
   bool _isGrouped = false;
 
+  TransactionsProvider() {
+    // Restore the owner's preferred Credit Book layout across restarts.
+    SharedPreferences.getInstance().then((p) {
+      final stored = p.getBool('credit_grouped');
+      if (stored != null && stored != _isGrouped) {
+        _isGrouped = stored;
+        notifyListeners();
+      }
+    });
+  }
+
   List<ActiveTransaction> get activeTransactions => _activeTransactions;
   List<GroupedCustomer> get groupedCustomers => _groupedCustomers;
   bool get isGrouped => _isGrouped;
 
-  void toggleGrouped() {
-    _isGrouped = !_isGrouped;
-    notifyListeners();
-  }
+  void toggleGrouped() => setGrouped(!_isGrouped);
 
   void setGrouped(bool value) {
+    if (_isGrouped == value) return;
     _isGrouped = value;
+    SharedPreferences.getInstance().then((p) => p.setBool('credit_grouped', value));
     notifyListeners();
   }
 

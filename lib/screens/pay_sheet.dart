@@ -23,6 +23,7 @@ class PaySheet extends StatefulWidget {
 
 class _PaySheetState extends State<PaySheet> {
   String _input = '';
+  bool _submitting = false;
 
   double get _displayAmount => double.tryParse(_input) ?? 0;
 
@@ -101,22 +102,50 @@ class _PaySheetState extends State<PaySheet> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          if (_isValid && !_isFullPayment)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ActionChip(
+                  avatar: const Icon(Icons.done_all, size: 16,
+                      color: Colors.white),
+                  label: Text(
+                      'Pay full ${formatCurrency(widget.remainingBalance)}'),
+                  backgroundColor: Colors.green.shade600,
+                  labelStyle: const TextStyle(color: Colors.white),
+                  onPressed: () => setState(() {
+                    _input = widget.remainingBalance % 1 == 0
+                        ? widget.remainingBalance.toStringAsFixed(0)
+                        : widget.remainingBalance.toStringAsFixed(2);
+                  }),
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             height: 52,
             child: ElevatedButton(
-              onPressed: _isValid ? _confirm : null,
+              onPressed: _isValid && !_submitting ? _confirm : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.grey.shade300,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: Text(
-                _isFullPayment ? 'Confirm Full Payment' : 'Confirm Payment (${formatCurrency(_displayAmount)})',
-                style: const TextStyle(fontSize: 18),
-              ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(
+                      _isFullPayment
+                          ? 'Confirm Full Payment'
+                          : 'Confirm Payment (${formatCurrency(_displayAmount)})',
+                      style: const TextStyle(fontSize: 18),
+                    ),
             ),
           ),
           const SizedBox(height: 12),
@@ -220,6 +249,8 @@ class _PaySheetState extends State<PaySheet> {
   }
 
   Future<void> _confirm() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
     HapticFeedback.mediumImpact();
     final provider = context.read<TransactionsProvider>();
     if (_isFullPayment) {

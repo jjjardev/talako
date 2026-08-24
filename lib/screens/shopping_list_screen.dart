@@ -34,7 +34,10 @@ class ShoppingListScreen extends StatelessWidget {
       );
     }
 
-    return ListView(
+    return RefreshIndicator(
+      onRefresh: () => context.read<InventoryProvider>().loadInventory(),
+      child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       children: [
           if (items.isNotEmpty) ...[
@@ -72,6 +75,7 @@ class ShoppingListScreen extends StatelessWidget {
           const SizedBox(height: 8),
         ],
       ],
+      ),
     );
   }
 

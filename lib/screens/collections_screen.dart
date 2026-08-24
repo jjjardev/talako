@@ -4,6 +4,7 @@ import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
 import '../utils/date_format.dart';
 import '../utils/pay_flow.dart';
+import 'add_credit_sheet.dart';
 import 'customer_detail_screen.dart';
 
 class CollectionsScreen extends StatefulWidget {
@@ -56,15 +57,32 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
               : provider.activeTransactions.isNotEmpty;
 
           if (!hasData) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text('No active debts', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                  SizedBox(height: 8),
-                  Text('Tap + to record a credit', style: TextStyle(color: Colors.grey)),
+                  const Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('No active debts', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+                    onPressed: () {
+                      final provider = context.read<TransactionsProvider>();
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        builder: (_) => const AddCreditSheet(),
+                      ).then((_) => provider.loadActiveTransactions());
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Record a credit'),
+                  ),
                 ],
               ),
             );
@@ -87,7 +105,11 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                 ),
               ),
               Expanded(
+                child: RefreshIndicator(
+                onRefresh: () =>
+                    context.read<TransactionsProvider>().loadActiveTransactions(),
                 child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.only(bottom: 80, left: 8, right: 8),
                   itemCount: provider.isGrouped
                       ? _filteredGrouped(provider).length
@@ -98,9 +120,23 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                       return _GroupedTile(g: g, onOpen: () => _openCustomerDetail(context, g));
                     } else {
                       final t = _filteredIndividual(provider)[index];
-                      return _TransactionTile(t: t);
+                      return _TransactionTile(
+                        t: t,
+                        onOpenCustomer: () => _openCustomerDetail(
+                            context,
+                            GroupedCustomer(
+                              customerId: t.customerId,
+                              customerName: t.customerName,
+                              totalAmount: 0,
+                              paidAmount: 0,
+                              transactionCount: 0,
+                              oldestDate: t.date,
+                              latestDate: t.date,
+                            )),
+                      );
                     }
                   },
+                ),
                 ),
               ),
             ],
@@ -198,8 +234,9 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
 
 class _TransactionTile extends StatelessWidget {
   final ActiveTransaction t;
+  final VoidCallback? onOpenCustomer;
 
-  const _TransactionTile({required this.t});
+  const _TransactionTile({required this.t, this.onOpenCustomer});
 
   @override
   Widget build(BuildContext context) {
@@ -241,9 +278,21 @@ class _TransactionTile extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    t.customerName,
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                  child: GestureDetector(
+                    onTap: onOpenCustomer,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            t.customerName,
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                          ),
+                        ),
+                        if (onOpenCustomer != null)
+                          Icon(Icons.chevron_right, size: 18, color: textColor.withValues(alpha: 0.6)),
+                      ],
+                    ),
                   ),
                 ),
                 Text(daysLabel,

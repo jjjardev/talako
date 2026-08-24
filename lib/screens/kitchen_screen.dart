@@ -130,7 +130,10 @@ class _IngredientsTabState extends State<_IngredientsTab> {
           clipBehavior: Clip.antiAlias,
           margin: EdgeInsets.zero,
           child: InkWell(
-            onTap: () => context.read<InventoryProvider>().cycleStockStatus(item.id!),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.read<InventoryProvider>().cycleStockStatus(item.id!);
+            },
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -348,7 +351,7 @@ class _MenuTabState extends State<_MenuTab> {
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
           child: Row(
             children: [
-              Text('${dishes.length} dishes',
+              Text('${dishes.length} dishes · tap = sell · hold = edit',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
               const Spacer(),
               TextButton.icon(
@@ -362,7 +365,11 @@ class _MenuTabState extends State<_MenuTab> {
         Expanded(
           child: dishes.isEmpty
               ? _EmptyMenu(onAdd: () => _openEditor())
-              : GridView.builder(
+              : RefreshIndicator(
+                  onRefresh: () =>
+                      context.read<InventoryProvider>().loadInventory(),
+                  child: GridView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(10, 4, 10, 90),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 180,
@@ -382,6 +389,7 @@ class _MenuTabState extends State<_MenuTab> {
                       onLongPress: () => _openEditor(existing: d),
                     );
                   },
+                ),
                 ),
         ),
       ],
