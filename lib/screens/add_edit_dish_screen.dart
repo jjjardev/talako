@@ -66,6 +66,9 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text('Delete dish?'),
+                    content: const Text(
+                        'It disappears from your Menu. Past sales of this '
+                        'dish stay in your records.'),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                       TextButton(

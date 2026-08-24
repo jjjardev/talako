@@ -311,7 +311,10 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete item?'),
-        content: Text('"${widget.item.name}" will be removed from your shelf and any dishes using it will lose this ingredient.'),
+        content: Text(
+            '"${widget.item.name}" will be removed from your shelf.\n\n'
+            'Past sales of this item stay in your records - deleting it '
+            'never erases money owed to you.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(

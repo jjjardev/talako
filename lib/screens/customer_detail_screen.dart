@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
@@ -27,6 +28,31 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<bool> _confirmDelete(ActiveTransaction t) async {
+    HapticFeedback.mediumImpact();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this receipt?'),
+        content: Text(
+            '${t.customerName}: ${t.items.map((i) => i.itemName).join(", ")} - '
+            'remaining ${t.remaining.toStringAsFixed(0)} pesos will be erased. '
+            'This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return false;
+    await context.read<TransactionsProvider>().deleteTransaction(t.id);
+    await _load();
+    return true;
   }
 
   Future<void> _load() async {
@@ -95,7 +121,19 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                         ),
                       ),
                       for (final t in _transactions)
-                        _ReceiptTile(t: t, onChanged: _load),
+                        Dismissible(
+                          key: ValueKey(t.id),
+                          direction: DismissDirection.startToEnd,
+                          background: Container(
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.only(left: 20),
+                            color: Colors.red,
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          confirmDismiss: (_) => _confirmDelete(t),
+                          onDismissed: (_) {},
+                        child: _ReceiptTile(t: t, onChanged: _load),
+                        ),
                     ],
                   ),
                 ),
