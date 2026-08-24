@@ -21,6 +21,11 @@ class Dish {
   /// Margin as a fraction of price (0.0 when price is 0).
   double get marginRate => price <= 0 ? 0 : margin / price;
 
+  /// Fraction of the whole-dish capital earned back, given all-time
+  /// [revenue] for this dish. 1.0 = puhunan fully recovered.
+  double recoveryRate(double revenue) =>
+      capital <= 0 ? 1.0 : (revenue / capital).clamp(0.0, 1.0);
+
   bool get thinMargin => price > 0 && capital > 0 && marginRate < 0.20;
 
   Map<String, dynamic> toMap() => {

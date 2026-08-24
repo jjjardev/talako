@@ -72,8 +72,8 @@ void main() {
 
       final result = await inv.recordTapSale((await db.getAllDishes()).firstWhere((d) => d.id == tapsiId));
       expect(result, isNotNull);
-      final (txnId, margin) = result!;
-      expect(margin, 33.0);
+      final (txnId, revenue) = result!;
+      expect(revenue, 75.0);
 
       final txn = (await (await db.database)
           .query('transactions', where: 'id = ?', whereArgs: [txnId])).first;
@@ -91,7 +91,6 @@ void main() {
 
       final today = await inv.todaySummary();
       expect(today['sales'], 75.0);
-      expect(today['profit'], 33.0);
       expect(today['plates'], 1.0);
     });
 
@@ -131,7 +130,7 @@ void main() {
       await inv.deleteTapSale(first!.$1);
       after = await inv.todaySummary();
       expect(after['plates'], before['plates']! + 1);
-      expect(after['profit'], closeTo(before['profit']! + 33.0, 0.001));
+      expect(after['sales'], closeTo(before['sales']! + 75.0, 0.001));
     });
   });
 
@@ -231,9 +230,9 @@ void main() {
       double platesFor(List<Map<String, dynamic>> rows) =>
           rows.where((r) => r['name'] == 'Tapsilog')
               .fold(0, (a, r) => a + (r['plates'] as num).toDouble());
-      double profitFor(List<Map<String, dynamic>> rows) =>
+      double salesFor(List<Map<String, dynamic>> rows) =>
           rows.where((r) => r['name'] == 'Tapsilog')
-              .fold(0.0, (a, r) => a + (r['profit'] as num).toDouble());
+              .fold(0.0, (a, r) => a + (r['sales'] as num).toDouble());
 
       final beforeRows = await db.getDishRecapForDay(dayStart, dayEnd);
 
@@ -243,8 +242,8 @@ void main() {
       final afterRows = await db.getDishRecapForDay(dayStart, dayEnd);
       expect(platesFor(afterRows) - platesFor(beforeRows), 3,
           reason: 'plates must count quantity, not receipt lines');
-      expect(profitFor(afterRows) - profitFor(beforeRows), closeTo(99.0, 0.001),
-          reason: 'profit = (price - capital) x quantity');
+      expect(salesFor(afterRows) - salesFor(beforeRows), closeTo(225.0, 0.001),
+          reason: 'recap reports raw output (revenue)');
     });
   });
 

@@ -802,8 +802,7 @@ class DatabaseHelper {
     return await db.rawQuery('''
       SELECT ti.dish_id AS dish_id, d.name AS name, d.price AS price,
         COALESCE(SUM(ti.quantity), 0) AS plates,
-        COALESCE(SUM(ti.price * ti.quantity), 0) AS sales,
-        COALESCE(SUM((ti.price - ti.unit_capital) * ti.quantity), 0) AS profit
+        COALESCE(SUM(ti.price * ti.quantity), 0) AS sales
       FROM transaction_items ti
       INNER JOIN transactions t ON t.id = ti.transaction_id
       INNER JOIN dishes d ON d.id = ti.dish_id
@@ -937,7 +936,6 @@ class DatabaseHelper {
     final result = await db.rawQuery('''
       SELECT
         COALESCE(SUM(ti.price * ti.quantity), 0) AS sales,
-        COALESCE(SUM((ti.price - ti.unit_capital) * ti.quantity), 0) AS profit,
         COALESCE(SUM(ti.quantity), 0) AS plates
       FROM transaction_items ti
       INNER JOIN transactions t ON t.id = ti.transaction_id
@@ -946,8 +944,23 @@ class DatabaseHelper {
     final row = result.first;
     return {
       'sales': (row['sales'] as num).toDouble(),
-      'profit': (row['profit'] as num).toDouble(),
       'plates': (row['plates'] as num).toDouble(),
+    };
+  }
+
+  /// All-time revenue for each dish - tracks puhunan recovery.
+  Future<Map<int, double>> getDishRevenueAllTime() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT ti.dish_id AS did, COALESCE(SUM(ti.price * ti.quantity), 0) AS revenue
+      FROM transaction_items ti
+      INNER JOIN transactions t ON t.id = ti.transaction_id
+      WHERE ti.dish_id IS NOT NULL AND t.is_owner_consumption = 0
+      GROUP BY ti.dish_id
+    ''');
+    return {
+      for (final row in result)
+        row['did'] as int: (row['revenue'] as num).toDouble(),
     };
   }
 

@@ -43,6 +43,7 @@ class InventoryProvider extends ChangeNotifier {
   Map<int, Set<ItemBadge>> _badges = {};
   Map<int, int> _servedWeek = {};
   Map<int, int> _servedToday = {};
+  Map<int, double> _recovered = {}; // all-time revenue per dish
   StockFilter _filter = StockFilter.all;
   bool _loading = false;
 
@@ -54,6 +55,9 @@ class InventoryProvider extends ChangeNotifier {
 
   /// Served counts for today only (cash taps + credit dish lines).
   Map<int, int> get servedToday => _servedToday;
+
+  /// All-time revenue per dish - how much of the puhunan is earned back.
+  Map<int, double> get recovered => _recovered;
   StockFilter get filter => _filter;
   bool get isLoading => _loading;
 
@@ -126,6 +130,12 @@ class InventoryProvider extends ChangeNotifier {
       await _loadBadges();
       await _loadDishes();
       await _loadServedCounts();
+      try {
+        _recovered = await _db.getDishRevenueAllTime();
+      } catch (e, s) {
+        logError('load-recovered', e, s);
+        _recovered = {};
+      }
     } catch (e, s) {
       logError('load-inventory', e, s);
     }
@@ -306,7 +316,8 @@ class InventoryProvider extends ChangeNotifier {
 
   /// Writes a settled transaction under the hidden "Cash Sales" customer
   /// (never appears in the Credit Book), stamps dish_id + unit_capital for
-  /// truthful margins, and returns `(txnId, margin)` for the undo snackbar.
+  /// truthful per-dish recovery, and returns `(txnId, revenue)` for the
+  /// undo snackbar.
   ///
   /// A per-dish debounce window swallows accidental double-taps so one
   /// physical press can never register two plates.
@@ -345,12 +356,14 @@ class InventoryProvider extends ChangeNotifier {
         isCashSale: true,
         dishId: dish.id,
       );
-      logInfo('tap-sale #$txnId ${dish.name} +${dish.margin}');
-      // Hot path: no full reload during a rush - just bump served counts.
+      logInfo('tap-sale #$txnId ${dish.name} +${dish.price} output');
+      // Hot path: no full reload during a rush - bump served counts and
+      // puhunan recovery.
       _servedWeek[dish.id!] = (_servedWeek[dish.id!] ?? 0) + 1;
       _servedToday[dish.id!] = (_servedToday[dish.id!] ?? 0) + 1;
+      _recovered[dish.id!] = (_recovered[dish.id!] ?? 0) + dish.price;
       notifyListeners();
-      return (txnId, dish.margin);
+      return (txnId, dish.price);
     } catch (e, s) {
       logError('tap-sale', e, s);
       return null;

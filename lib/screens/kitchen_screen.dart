@@ -382,6 +382,7 @@ class _MenuTabState extends State<_MenuTab> {
                     final d = dishes[i];
                     return _MenuCard(
                       dish: dishes[i],
+                      recovered: inv.recovered[dishes[i].id] ?? 0,
                       servedToday: inv.servedToday[dishes[i].id] ?? 0,
                       servedWeek: inv.servedWeek[dishes[i].id] ?? 0,
                       isBestSeller: inv.bestSellerDishId == dishes[i].id,
@@ -401,12 +402,12 @@ class _MenuTabState extends State<_MenuTab> {
     final inv = context.read<InventoryProvider>();
     final result = await inv.recordTapSale(d);
     if (!mounted || result == null) return;
-    final (txnId, margin) = result;
+    final (txnId, revenue) = result;
     await _refreshToday();
     if (!mounted) return;
     showAutoDismissSnackBar(
       ScaffoldMessenger.of(context),
-      message: '+${formatCurrency(margin)} profit',
+      message: '+${formatCurrency(revenue)} output',
       action: SnackBarAction(
         label: 'Undo',
         onPressed: () async {
@@ -436,7 +437,6 @@ class _TodayStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sales = today?['sales'] ?? 0;
-    final profit = today?['profit'] ?? 0;
     final plates = (today?['plates'] ?? 0).toInt();
 
     return Card(
@@ -453,7 +453,7 @@ class _TodayStrip extends StatelessWidget {
                 Text('Today',
                     style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
                 const SizedBox(width: 8),
-                Text(formatCurrency(profit),
+                Text(formatCurrency(sales),
                     style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
@@ -461,7 +461,7 @@ class _TodayStrip extends StatelessWidget {
                 const SizedBox(width: 6),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('$plates plates · ${formatCurrency(sales)}',
+                  child: Text('$plates plates sold',
                       style: TextStyle(fontSize: 13, color: Colors.grey.shade800)),
                 ),
                 const Spacer(),
@@ -523,11 +523,10 @@ class RecapCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rows = (recap['rows'] as List).cast<Map<String, dynamic>>();
-    double sales = 0, profit = 0;
+    double sales = 0;
     int plates = 0;
     for (final r in rows) {
       sales += (r['sales'] as num).toDouble();
-      profit += (r['profit'] as num).toDouble();
       plates += (r['plates'] as int);
     }
     final day = recap['day'] as String? ?? '';
@@ -539,7 +538,7 @@ class RecapCard extends StatelessWidget {
       shareText.writeln(
           '${r['name']}: ${r['plates']}x - PHP${(r['sales'] as num).toStringAsFixed(0)}');
     }
-    shareText.writeln('Total: PHP${sales.toStringAsFixed(0)} / profit PHP${profit.toStringAsFixed(0)}');
+    shareText.writeln('Total output: PHP${sales.toStringAsFixed(0)}');
 
     return Card(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
@@ -553,7 +552,7 @@ class RecapCard extends StatelessWidget {
               const Icon(Icons.history_edu, size: 18, color: Colors.indigo),
               const SizedBox(width: 6),
               Expanded(
-                child: Text('$label: $plates plates · +PHP${profit.toStringAsFixed(0)} profit',
+                child: Text('$label: $plates plates · PHP${sales.toStringAsFixed(0)} output',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
@@ -592,6 +591,7 @@ class RecapCard extends StatelessWidget {
 
 class _MenuCard extends StatelessWidget {
   final Dish dish;
+  final double recovered;
   final int servedToday;
   final int servedWeek;
   final bool isBestSeller;
@@ -600,6 +600,7 @@ class _MenuCard extends StatelessWidget {
 
   const _MenuCard({
     required this.dish,
+    required this.recovered,
     required this.servedToday,
     required this.servedWeek,
     required this.isBestSeller,
@@ -642,23 +643,36 @@ class _MenuCard extends StatelessWidget {
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.bold)),
                   const Spacer(),
+                  if (dish.capital > 0) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: dish.recoveryRate(recovered),
+                        minHeight: 5,
+                        backgroundColor: Colors.grey.shade300,
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(Colors.teal),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                   Row(
                     children: [
-                      Text('+${formatCurrency(dish.margin)}',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: dish.thinMargin ? Colors.orange : Colors.green)),
-                      const SizedBox(width: 4),
-                      if (dish.capital > 0)
-                        Text('${(dish.marginRate * 100).toStringAsFixed(0)}%',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: dish.thinMargin ? Colors.orange : Colors.grey.shade600)),
-                      if (dish.thinMargin) ...[
-                        const SizedBox(width: 4),
+                      Text(
+                        dish.capital > 0
+                            ? '${formatCurrency(recovered)} / ${formatCurrency(dish.capital)}'
+                            : 'price per plate',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: recovered >= dish.capital && dish.capital > 0
+                                ? Colors.green.shade700
+                                : Colors.grey.shade600),
+                      ),
+                      const Spacer(),
+                      if (dish.recoveryRate(recovered) < 0 &&
+                          dish.capital > 0)
                         const Text('⚠️', style: TextStyle(fontSize: 11)),
-                      ],
                     ],
                   ),
                   if (servedToday > 0)
