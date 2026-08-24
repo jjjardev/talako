@@ -15,7 +15,7 @@ class Dish {
     String? createdAt,
   }) : createdAt = createdAt ?? DateTime.now().toIso8601String();
 
-  /// Per-plate earnings: selling price minus cost (puhunan).
+  /// Per-plate earnings: price per serving minus cost per plate.
   double get margin => roundMoney(price - capital);
 
   /// Margin as a fraction of price (0.0 when price is 0).

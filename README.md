@@ -1,6 +1,6 @@
 # TalaKo — Offline Credit Management for Small Stores
 
-**Track debts. Sell your ulam with one tap. Never lose a notebook again.**
+**Track debts. Sell dishes with one tap. Never lose a notebook again.**
 
 TalaKo is an **offline-first** Android app for small store owners who sell on credit — and for carinderias that want to know their profit per plate. No internet needed. No account required.
 
@@ -30,7 +30,7 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 - Undo after paying — reverses the payment instantly
 
 **Menu Inventory** *(for carinderias & food counters)*
-- Each dish carries its **Cost (Puhunan)** and **Selling Price** — margin shown on every card in pesos and percent
+- Each dish carries its **Capital (cost per plate)** and **Price per serving** — margin shown on every card in pesos and percent
 - **One tap = one sale recorded**, with per-tap Undo and a day-reset button for misclicks
 - Today strip: profit earned, plates served — across cash taps AND dishes sold on credit
 - Sold-Nx-today chip, best-seller 🏆 badge, thin-margin warning below 20%
@@ -78,7 +78,7 @@ TalaKo is an **offline-first** Android app for small store owners who sell on cr
 ## Target Users
 
 - **Sari-sari store owners** who sell on credit to regular customers
-- **Carinderia owners** tracking ulam sales, puhunan vs tinda, and daily profit
+- **Carinderia owners** tracking dish sales, capital vs price, and daily profit
 - **Tricycle operators** tracking daily boundary payments from drivers
 - **Rice retailers** tracking kilo-based credit
 - **Water refilling stations** tracking customer deposits and refills

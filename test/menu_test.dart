@@ -151,11 +151,25 @@ void main() {
           reason: 'no puhunan entered yet - do not nag');
     });
 
-    test('saveDish rejects puhunan above selling price', () async {
+    test('warn-only: saving with capital above price succeeds', () async {
+      // The owner decides pricing reality; the app only warns via the
+      // thin-margin badge on the card. No hard block.
+      final inv = InventoryProvider();
+      final error = await inv.saveDish(
+          name: 'Risky Priced Dish', price: 50, capital: 60);
+      expect(error, isNull);
+      await inv.loadInventory();
+      final dish =
+          inv.dishes.firstWhere((d) => d.name == 'Risky Priced Dish');
+      expect(dish.margin, isNegative);
+      expect(dish.thinMargin, isTrue);
+    });
+
+    test('zero-capital dish never triggers the margin nag', () async {
       final inv = InventoryProvider();
       final error =
-          await inv.saveDish(name: 'Bad Margin Dish', price: 50, capital: 60);
-      expect(error, 'Puhunan must be below the selling price');
+          await inv.saveDish(name: 'No Capital Dish', price: 50);
+      expect(error, isNull);
     });
   });
 

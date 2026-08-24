@@ -103,18 +103,16 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
               controller: _capital,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Capital / Puhunan per plate (₱)',
+                labelText: 'Capital - cost per plate',
                 prefixText: '₱ ',
                 border: OutlineInputBorder(),
                 helperText:
-                    'Your estimated cost - drives the margin shown on every sale',
+                    'Your rough cost estimate - drives the margin shown on every sale',
               ),
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return null; // optional
                 final c = double.tryParse(v.trim());
                 if (c == null) return 'Enter a valid amount';
-                final p = double.tryParse(_price.text.trim()) ?? 0;
-                if (c >= p) return 'Puhunan must be below the selling price';
                 return null;
               },
             ),
@@ -123,7 +121,7 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
               controller: _price,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Tinda (selling price)',
+                labelText: 'Price per serving',
                 prefixText: '₱ ',
                 border: OutlineInputBorder(),
               ),

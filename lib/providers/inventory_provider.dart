@@ -268,9 +268,6 @@ class InventoryProvider extends ChangeNotifier {
     required double price,
     double capital = 0,
   }) async {
-    if (capital > 0 && price <= capital) {
-      return 'Puhunan must be below the selling price';
-    }
     try {
       if (dishId == null) {
         await _db.insertDish(Dish(name: name.trim(), price: price, capital: capital));

@@ -700,7 +700,7 @@ class _EmptyMenu extends StatelessWidget {
           Icon(Icons.restaurant_menu, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
-            'No menu items yet.\nAdd your ulam with its puhunan and price,\nthen tap to record every sale.',
+            'No menu items yet.\nAdd a dish with its capital and price,\nthen tap to record every sale.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
           ),
