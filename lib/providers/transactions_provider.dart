@@ -70,13 +70,14 @@ class TransactionsProvider extends ChangeNotifier {
 
   TransactionsProvider() {
     // Restore the owner's preferred Credit Book layout across restarts.
+    // Guarded: pure-Dart consumers (tests) may lack the plugin.
     SharedPreferences.getInstance().then((p) {
       final stored = p.getBool('credit_grouped');
       if (stored != null && stored != _isGrouped) {
         _isGrouped = stored;
         notifyListeners();
       }
-    });
+    }).catchError((_) {});
   }
 
   List<ActiveTransaction> get activeTransactions => _activeTransactions;
