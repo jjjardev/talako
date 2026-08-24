@@ -35,31 +35,58 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
     return Consumer<InventoryProvider>(
       builder: (context, inv, _) {
         final items = inv.filteredItems;
+        final showAzStrip = inv.sort == ShelfSort.alpha;
         return Column(
           children: [
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                children: [
-                  for (final f in StockFilter.values)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(switch (f) {
-                          StockFilter.all => 'All',
-                          StockFilter.retail => 'Retail',
-                          StockFilter.ingredients => 'Ingredients',
-                          StockFilter.lowOrOut => 'Low / Out',
-                          StockFilter.cold => 'Cold',
-                        }),
-                        selected: inv.filter == f,
-                        onSelected: (_) => inv.setFilter(f),
-                      ),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      children: [
+                        for (final f in StockFilter.values)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(switch (f) {
+                                StockFilter.all => 'All',
+                                StockFilter.retail => 'Retail',
+                                StockFilter.ingredients => 'Ingredients',
+                                StockFilter.lowOrOut => 'Low / Out',
+                                StockFilter.cold => 'Cold',
+                              }),
+                              selected: inv.filter == f,
+                              onSelected: (_) => inv.setFilter(f),
+                            ),
+                          ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+                ),
+                Tooltip(
+                  message: inv.sort == ShelfSort.alpha
+                      ? 'Sorted: A to Z'
+                      : 'Sorted: urgent first',
+                  child: IconButton(
+                    tooltip: 'Toggle sort',
+                    onPressed: () => context
+                        .read<InventoryProvider>()
+                        .setSort(inv.sort == ShelfSort.alpha
+                            ? ShelfSort.urgent
+                            : ShelfSort.alpha),
+                    icon: Icon(
+                      inv.sort == ShelfSort.alpha
+                          ? Icons.sort_by_alpha
+                          : Icons.low_priority,
+                      color: Colors.teal.shade700,
+                    ),
+                  ),
+                ),
+              ],
             ),
             Expanded(
               child: items.isEmpty
@@ -68,12 +95,16 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                       onRefresh: () => inv.loadInventory(),
                       child: LayoutBuilder(
                         builder: (context, cons) {
-                          final sorted = [...items]
-                            ..sort((a, b) => a.name
+                          final sorted = [...items];
+                          if (inv.sort == ShelfSort.alpha) {
+                            sorted.sort((a, b) => a.name
                                 .toLowerCase()
                                 .compareTo(b.name.toLowerCase()));
-                          final offsets =
-                              AlphabetStrip.letterOffsets(sorted.map((i) => i.name).toList());
+                          }
+                          final offsets = inv.sort == ShelfSort.alpha
+                              ? AlphabetStrip.letterOffsets(
+                                  sorted.map((i) => i.name).toList())
+                              : const <String, int>{};
                           return Stack(
                             children: [
                               GridView.builder(
@@ -93,6 +124,7 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                                     onEdit: () =>
                                         _openEditor(context, sorted[i])),
                               ),
+                              if (showAzStrip)
                               Positioned(
                                 right: 2,
                                 top: 0,

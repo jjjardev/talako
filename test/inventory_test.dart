@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talako/database/database_helper.dart';
@@ -10,6 +11,7 @@ import 'package:talako/providers/inventory_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
 
   setUpAll(() async {
     sqfliteFfiInit();
@@ -125,6 +127,47 @@ void main() {
       final tables = await (await db.database)
           .rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='dishes'");
       expect(tables, isNotEmpty);
+    });
+  });
+
+  group('shelf filtering & sorting', () {
+    test('urgent sort orders out -> low -> rest by name', () async {
+      final db = DatabaseHelper.instance;
+      final inv = InventoryProvider();
+
+      await db.insertItem(Item(name: 'Sort Well', price: 5));
+      await db.insertItem(Item(
+          name: 'Sort Out', price: 6, stockStatus: StockStatus.outOfStock));
+      await db.insertItem(Item(
+          name: 'Sort Low', price: 7, stockStatus: StockStatus.runningLow));
+
+      inv.setSort(ShelfSort.urgent);
+      await inv.loadInventory();
+      final items = inv.filteredItems;
+      expect(items.indexOf(items.firstWhere((i) => i.name == 'Sort Out')),
+          lessThan(items.indexOf(items.firstWhere((i) => i.name == 'Sort Low'))));
+      expect(items.indexOf(items.firstWhere((i) => i.name == 'Sort Low')),
+          lessThan(items.indexOf(items.firstWhere((i) => i.name == 'Sort Well'))));
+
+      // Alpha restores name order regardless of status.
+      inv.setSort(ShelfSort.alpha);
+      final alphaNames =
+          inv.filteredItems.map((i) => i.name).toList();
+      final sortedNames = [...alphaNames]..sort(
+          (a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      expect(alphaNames.join('|'), sortedNames.join('|'),
+          reason: 'alpha sort must order case-insensitively');
+    });
+
+    test('filter and sort persist via prefs', () async {
+      final inv = InventoryProvider();
+      inv.setFilter(StockFilter.lowOrOut);
+      inv.setSort(ShelfSort.urgent);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('shelf_filter'), StockFilter.lowOrOut.index);
+      expect(prefs.getString('shelf_sort'), ShelfSort.urgent.name);
+      // restore for later suites sharing the mock
+      inv.setFilter(StockFilter.all);
     });
   });
 

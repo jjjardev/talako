@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/customer.dart';
 import '../models/item.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/spoilage_entry.dart';
 import '../models/stock_enums.dart';
 import '../utils/app_logger.dart';
@@ -33,41 +34,98 @@ extension ItemBadgeX on ItemBadge {
 
 enum StockFilter { all, retail, ingredients, lowOrOut, cold }
 
+/// Shelf ordering. Alpha works with the A-Z strip; urgent puts
+/// out-of-stock first, then running low, then the rest.
+enum ShelfSort { alpha, urgent }
+
 class InventoryProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
 
   List<Item> _items = [];
   Map<int, Set<ItemBadge>> _badges = {};
   StockFilter _filter = StockFilter.all;
+  ShelfSort _sort = ShelfSort.alpha;
   bool _loading = false;
 
   List<Item> get items => _items;
   Map<int, Set<ItemBadge>> get badges => _badges;
 
   StockFilter get filter => _filter;
+  ShelfSort get sort => _sort;
   bool get isLoading => _loading;
+
+  InventoryProvider() {
+    // Restore last-used Shelf layout (fire-and-forget).
+    SharedPreferences.getInstance().then((p) {
+      final f = p.getInt('shelf_filter');
+      final so = p.getString('shelf_sort');
+      var changed = false;
+      if (f != null && f >= 0 && f < StockFilter.values.length && f != _filter.index) {
+        _filter = StockFilter.values[f];
+        changed = true;
+      }
+      if (so == 'urgent' && _sort != ShelfSort.urgent) {
+        _sort = ShelfSort.urgent;
+        changed = true;
+      }
+      if (changed) notifyListeners();
+    }).catchError((_) {});
+  }
+
+  void setFilter(StockFilter f) {
+    if (_filter == f) return;
+    _filter = f;
+    SharedPreferences.getInstance().then((p) => p.setInt('shelf_filter', f.index));
+    notifyListeners();
+  }
+
+  void setSort(ShelfSort sort) {
+    if (_sort == sort) return;
+    _sort = sort;
+    SharedPreferences.getInstance().then((p) => p.setString('shelf_sort', sort.name));
+    notifyListeners();
+  }
 
 
   bool isLowOrOut(Item i) =>
       i.stockStatus == StockStatus.runningLow ||
       i.stockStatus == StockStatus.outOfStock;
 
+  int _statusRank(Item i) => switch (i.stockStatus) {
+        StockStatus.outOfStock => 0,
+        StockStatus.runningLow => 1,
+        StockStatus.wellStocked => 2,
+        StockStatus.cold => 3,
+      };
+
   List<Item> get filteredItems {
-    switch (_filter) {
-      case StockFilter.all:
-        return _items;
-      case StockFilter.retail:
-        return _items.where((i) => i.usageType != UsageType.ingredientOnly).toList();
-      case StockFilter.ingredients:
-        return _items.where((i) => i.isIngredient).toList();
-      case StockFilter.lowOrOut:
-        return _items.where(isLowOrOut).toList();
-      case StockFilter.cold:
-        return _items
-            .where((i) => i.stockStatus == StockStatus.cold ||
-                (_badges[i.id]?.contains(ItemBadge.cold) ?? false))
-            .toList();
+    final list = switch (_filter) {
+      StockFilter.all => _items,
+      StockFilter.retail =>
+          _items.where((i) => i.usageType != UsageType.ingredientOnly).toList(),
+      StockFilter.ingredients => _items.where((i) => i.isIngredient).toList(),
+      StockFilter.lowOrOut => _items.where(isLowOrOut).toList(),
+      StockFilter.cold => _items
+          .where((i) => i.stockStatus == StockStatus.cold ||
+              (_badges[i.id]?.contains(ItemBadge.cold) ?? false))
+          .toList(),
+    };
+    return _applySort(list);
+  }
+
+  /// Urgent sort: out-of-stock first, then low; name breaks ties.
+  List<Item> _applySort(List<Item> list) {
+    if (_sort == ShelfSort.urgent) {
+      list.sort((a, b) {
+        final r = _statusRank(a).compareTo(_statusRank(b));
+        if (r != 0) return r;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    } else {
+      list.sort((a, b) =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     }
+    return list;
   }
 
   List<Item> get shoppingList {
@@ -82,12 +140,7 @@ class InventoryProvider extends ChangeNotifier {
       if (r != 0) return r;
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
-    return lowOrOutList;
-  }
-
-  void setFilter(StockFilter f) {
-    _filter = f;
-    notifyListeners();
+      return lowOrOutList;
   }
 
   Item? itemById(int id) {
