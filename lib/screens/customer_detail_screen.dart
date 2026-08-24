@@ -132,7 +132,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           ),
                           confirmDismiss: (_) => _confirmDelete(t),
                           onDismissed: (_) {},
-                        child: _ReceiptTile(t: t, onChanged: _load),
+                        child: _ReceiptTile(
+                          t: t,
+                          onChanged: _load,
+                          onDelete: _confirmDelete,
+                        ),
                         ),
                     ],
                   ),
@@ -144,8 +148,13 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 class _ReceiptTile extends StatelessWidget {
   final ActiveTransaction t;
   final VoidCallback onChanged;
+  final Future<bool> Function(ActiveTransaction) onDelete;
 
-  const _ReceiptTile({required this.t, required this.onChanged});
+  const _ReceiptTile({
+    required this.t,
+    required this.onChanged,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -185,6 +194,21 @@ class _ReceiptTile extends StatelessWidget {
                 Expanded(
                   child: Text(daysLabel,
                     style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+                ),
+                SizedBox(
+                  height: 28,
+                  width: 28,
+                  child: IconButton(
+                    tooltip: 'Delete receipt',
+                    padding: EdgeInsets.zero,
+                    iconSize: 16,
+                    style: IconButton.styleFrom(
+                        foregroundColor: Colors.red.shade400),
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () async {
+                      await onDelete(t);
+                    },
+                  ),
                 ),
               ],
             ),

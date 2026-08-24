@@ -258,8 +258,9 @@ class _MenuTabState extends State<_MenuTab> {
       builder: (ctx) => AlertDialog(
         title: const Text('Reset today\'s taps?'),
         content: const Text(
-            'This deletes every cash sale you tapped today (misclick cleanup). '
-            'Customer credit receipts are NOT touched.'),
+            'This deletes only the cash sales you tapped on the Menu today.\n\n'
+            'Customer credit receipts are NOT touched - to remove one, open '
+            'the customer in the Credit Book and delete the receipt there.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
