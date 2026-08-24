@@ -95,14 +95,35 @@ void main() {
       expect(today['plates'], 1.0);
     });
 
+    test('rapid double-tap debounces to a single sale', () async {
+      final db = DatabaseHelper.instance;
+      final inv = InventoryProvider();
+      final dish =
+          (await db.getAllDishes()).firstWhere((d) => d.id == tapsiId);
+      final before = await inv.todaySummary();
+      final t0 = DateTime(2026, 1, 1, 10);
+
+      final r1 = await inv.recordTapSale(dish, now: t0);
+      final r2 = await inv.recordTapSale(
+          dish, now: t0.add(const Duration(milliseconds: 200)));
+
+      expect(r1, isNotNull);
+      expect(r2, isNull, reason: 'second press inside 350ms is swallowed');
+      final after = await inv.todaySummary();
+      expect(after['plates'], before['plates']! + 1);
+    });
+
     test('undo removes exactly one tap-sale (delta-based)', () async {
       final inv = InventoryProvider();
       final dish = (await DatabaseHelper.instance.getAllDishes())
           .firstWhere((d) => d.id == tapsiId);
 
       final before = await inv.todaySummary();
-      final first = await inv.recordTapSale(dish);
-      await inv.recordTapSale(dish);
+      final base = DateTime.now();
+      final first =
+          await inv.recordTapSale(dish, now: base);
+      await inv.recordTapSale(
+          dish, now: base.add(const Duration(seconds: 1)));
 
       var after = await inv.todaySummary();
       expect(after['plates'], before['plates']! + 2);
@@ -225,12 +246,14 @@ void main() {
       expect(await inv.getReheatLeftoverPublic(dishId), 1);
 
       final dishObj = (await db.getAllDishes()).firstWhere((d) => d.id == dishId);
-      final r1 = await inv.recordTapSale(dishObj);
+      final r1 = await inv.recordTapSale(
+          dishObj, now: DateTime.now());
       expect(r1, isNotNull);
       expect(await inv.getReheatLeftoverPublic(dishId), 0,
           reason: 'leftover plate consumed first');
 
-      final r2 = await inv.recordTapSale(dishObj);
+      final r2 = await inv.recordTapSale(
+          dishObj, now: DateTime.now().add(const Duration(seconds: 1)));
       expect(r2, isNotNull);
       expect(await inv.getReheatLeftoverPublic(dishId), 0);
     });

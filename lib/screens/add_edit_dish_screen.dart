@@ -100,25 +100,10 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
             ),
             const SizedBox(height: 12),
             TextFormField(
-              controller: _price,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Selling Price (₱)',
-                prefixText: '₱ ',
-                border: OutlineInputBorder(),
-              ),
-              validator: (v) {
-                final p = double.tryParse(v ?? '');
-                if (p == null || p <= 0) return 'Enter a selling price above 0';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
               controller: _capital,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Cost / Puhunan per plate (₱)',
+                labelText: 'Capital / Puhunan per plate (₱)',
                 prefixText: '₱ ',
                 border: OutlineInputBorder(),
                 helperText:
@@ -130,6 +115,21 @@ class _AddEditDishScreenState extends State<AddEditDishScreen> {
                 if (c == null) return 'Enter a valid amount';
                 final p = double.tryParse(_price.text.trim()) ?? 0;
                 if (c >= p) return 'Puhunan must be below the selling price';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _price,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Tinda (selling price)',
+                prefixText: '₱ ',
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) {
+                final p = double.tryParse(v ?? '');
+                if (p == null || p <= 0) return 'Enter a selling price above 0';
                 return null;
               },
             ),

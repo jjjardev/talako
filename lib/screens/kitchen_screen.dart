@@ -406,8 +406,7 @@ class _MenuTabState extends State<_MenuTab> {
     if (!mounted) return;
     showAutoDismissSnackBar(
       ScaffoldMessenger.of(context),
-      message:
-          '+${formatCurrency(margin)} profit · Today ${formatCurrency(_today?['profit'] ?? margin)}',
+      message: '+${formatCurrency(margin)} profit',
       action: SnackBarAction(
         label: 'Undo',
         onPressed: () async {

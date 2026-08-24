@@ -305,7 +305,22 @@ class InventoryProvider extends ChangeNotifier {
   /// (never appears in the Credit Book), stamps dish_id + unit_capital for
   /// truthful margins, demotes `fresh` ingredients to `use_soon`, and
   /// returns this sale's margin for the snackbar.
-  Future<(int, double)?> recordTapSale(Dish dish) async {
+  final Map<int, DateTime> _lastTapAt = {};
+
+  /// Writes a settled transaction under the hidden "Cash Sales" customer
+  /// (never appears in the Credit Book), stamps dish_id + unit_capital for
+  /// truthful margins, and returns `(txnId, margin)` for the undo snackbar.
+  ///
+  /// A per-dish debounce window swallows accidental double-taps so one
+  /// physical press can never register two plates.
+  Future<(int, double)?> recordTapSale(Dish dish, {DateTime? now}) async {
+    final stamp = now ?? DateTime.now();
+    final last = _lastTapAt[dish.id];
+    if (last != null &&
+        stamp.difference(last) < const Duration(milliseconds: 350)) {
+      return null;
+    }
+    _lastTapAt[dish.id!] = stamp;
     try {
       var customer = await _db.getCustomerByName('Cash Sales');
       customer ??= await _db.getCustomerById(
