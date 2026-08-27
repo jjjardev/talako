@@ -95,12 +95,7 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                       onRefresh: () => inv.loadInventory(),
                       child: LayoutBuilder(
                         builder: (context, cons) {
-                          final sorted = [...items];
-                          if (inv.sort == ShelfSort.alpha) {
-                            sorted.sort((a, b) => a.name
-                                .toLowerCase()
-                                .compareTo(b.name.toLowerCase()));
-                          }
+                          final sorted = items;
                           final offsets = inv.sort == ShelfSort.alpha
                               ? AlphabetStrip.letterOffsets(
                                   sorted.map((i) => i.name).toList())

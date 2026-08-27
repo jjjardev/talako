@@ -195,6 +195,13 @@ class TransactionsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _refreshAfterMutation() async {
+    await loadActiveTransactions();
+    if (_isGrouped) {
+      await loadGroupedTransactions();
+    }
+  }
+
   Future<int> addTransactionWithItemNames(
     int customerId,
     List<String> itemNames,
@@ -212,7 +219,7 @@ class TransactionsProvider extends ChangeNotifier {
       });
     }
     final txnId = await _db.insertTransactionWithItems(customerId, items);
-    await loadActiveTransactions();
+    await _refreshAfterMutation();
     return txnId;
   }
 
@@ -223,7 +230,7 @@ class TransactionsProvider extends ChangeNotifier {
     } catch (e, s) {
       logError('process-payment', e, s);
     }
-    await loadActiveTransactions();
+    await _refreshAfterMutation();
   }
 
   Future<void> deleteTransaction(int transactionId) async {
@@ -232,7 +239,7 @@ class TransactionsProvider extends ChangeNotifier {
     } catch (e, s) {
       logError('delete-transaction', e, s);
     }
-    await loadActiveTransactions();
+    await _refreshAfterMutation();
   }
 
   /// Settlement-day bulk: marks every unpaid credit receipt of the
@@ -240,7 +247,7 @@ class TransactionsProvider extends ChangeNotifier {
   Future<(int, double)?> markAllPaidForCustomer(int customerId) async {
     try {
       final r = await _db.markAllCustomerReceiptsPaid(customerId);
-      await loadActiveTransactions();
+      await _refreshAfterMutation();
       return (r['settled']!.toInt(), r['collected']!);
     } catch (e, s) {
       logError('mark-all-paid', e, s);
@@ -254,6 +261,6 @@ class TransactionsProvider extends ChangeNotifier {
     } catch (e, s) {
       logError('reverse-payment', e, s);
     }
-    await loadActiveTransactions();
+    await _refreshAfterMutation();
   }
 }

@@ -108,7 +108,8 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
                 _selectedItemId = id;
                 final item = inv.itemById(id!);
                 if (item != null && _value.text.isEmpty) {
-                  _value.text = item.price.toStringAsFixed(0);
+                  final p = item.price;
+                  _value.text = p % 1 == 0 ? p.toStringAsFixed(0) : p.toStringAsFixed(2);
                 }
               });
             },

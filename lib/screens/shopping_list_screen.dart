@@ -12,11 +12,8 @@ class ShoppingListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final inv = context.watch<InventoryProvider>();
     final items = inv.shoppingList;
-    final hotItems = inv.items
-        .where((i) => !items.contains(i))
-        .toList();
 
-    if (items.isEmpty && hotItems.isEmpty) {
+    if (items.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

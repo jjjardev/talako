@@ -194,13 +194,6 @@ class SettingsScreen extends StatelessWidget {
       final jsonString = await file.readAsString();
       final data = jsonDecode(jsonString) as Map<String, dynamic>;
 
-      if (!data.containsKey('items') || !data.containsKey('customers')) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid backup file')));
-        }
-        return;
-      }
-
       await DatabaseHelper.instance.importBackup(data);
 
       if (context.mounted) {

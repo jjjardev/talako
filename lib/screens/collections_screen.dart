@@ -140,14 +140,14 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                           ),
                         ),
                         confirmDismiss: (_) async {
-                          final priorPaid = t.paidAmount;
+                          final amountPaid = t.remaining;
                           final ok = await showDialog<bool>(
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title:
                                   Text('Mark ${t.customerName} fully paid?'),
                               content: Text(
-                                  'Remaining ${formatCurrency(t.remaining)} '
+                                  'Remaining ${formatCurrency(amountPaid)} '
                                   'will be settled.'),
                               actions: [
                                 TextButton(
@@ -164,18 +164,16 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                             ),
                           );
                           if (ok != true) return false;
-                          await provider.processPayment(t.id, t.remaining);
+                          await provider.processPayment(t.id, amountPaid);
                           if (!context.mounted) return false;
                           showAutoDismissSnackBar(
                             ScaffoldMessenger.of(context),
                             message:
-                                '${t.customerName} fully paid · ${formatCurrency(t.remaining)}',
+                                '${t.customerName} fully paid · ${formatCurrency(amountPaid)}',
                             action: SnackBarAction(
                               label: 'Undo',
-                              onPressed: () => provider
-                                  .reversePayment(t.id, priorPaid == 0
-                                      ? t.remaining
-                                      : t.paidAmount),
+                              onPressed: () =>
+                                  provider.reversePayment(t.id, amountPaid),
                             ),
                           );
                           return false;
@@ -232,19 +230,14 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
   }
 
   Widget _buildSummaryBar(TransactionsProvider provider) {
-    double overdueTotal = 0;
+    double overdueTotal = provider.totalOverdue;
     double total = 0;
 
     if (provider.isGrouped) {
       for (final g in provider.groupedCustomers) {
         total += g.remaining;
-        final cutoff = DateTime.now().subtract(const Duration(days: 14));
-        if (DateTime.parse(g.oldestDate).isBefore(cutoff)) {
-          overdueTotal += g.remaining;
-        }
       }
     } else {
-      overdueTotal = provider.totalOverdue;
       total = provider.totalOutstanding;
     }
 
