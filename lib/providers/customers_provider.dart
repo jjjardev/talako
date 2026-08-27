@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/customer.dart';
 import '../models/customer_summary.dart';
-import '../models/transaction.dart' as txn_model;
-import '../models/transaction_item.dart';
 import '../utils/app_logger.dart';
 
 class CustomersProvider extends ChangeNotifier {
@@ -86,29 +84,5 @@ class CustomersProvider extends ChangeNotifier {
       customer = await _db.getCustomerById(id);
     }
     return customer;
-  }
-
-  Future<List<txn_model.Transaction>> getTransactions(int customerId) async {
-    return await _db.getTransactionsByCustomer(customerId);
-  }
-
-  Future<List<txn_model.Transaction>> getActiveTransactions(int customerId) async {
-    return await _db.getActiveTransactionsByCustomer(customerId);
-  }
-
-  Future<List<txn_model.Transaction>> getPaidTransactions(int customerId) async {
-    return await _db.getPaidTransactionsByCustomer(customerId);
-  }
-
-  Future<List<TransactionItem>> getItems(int transactionId) async {
-    return await _db.getItemsByTransaction(transactionId);
-  }
-
-  Future<double> getOutstandingBalance(int customerId) async {
-    return await _db.getCustomerOutstandingBalance(customerId);
-  }
-
-  Future<bool> hasOverdueTransactions(int customerId) async {
-    return await _db.hasOverdueTransactions(customerId);
   }
 }

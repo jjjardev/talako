@@ -19,8 +19,21 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _initFuture ??= _initDB(databaseName).then((db) => _database = db);
-    await _initFuture;
+    if (_initFuture != null) {
+      try {
+        await _initFuture;
+        if (_database != null) return _database!;
+      } catch (_) {
+        _initFuture = null;
+      }
+    }
+    _initFuture = _initDB(databaseName).then((db) => _database = db);
+    try {
+      await _initFuture;
+    } catch (e) {
+      _initFuture = null;
+      rethrow;
+    }
     return _database!;
   }
 
@@ -400,21 +413,6 @@ class DatabaseHelper {
 
   // ─── Transactions ───────────────────────────────────────────────────
 
-  Future<int> insertTransaction(Transaction transaction) async {
-    final db = await database;
-    return await db.insert('transactions', transaction.toMap());
-  }
-
-  Future<List<Transaction>> getActiveTransactions() async {
-    final db = await database;
-    final result = await db.rawQuery('''
-      SELECT * FROM transactions
-      WHERE status = 'ACTIVE' AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0
-      ORDER BY date ASC
-    ''');
-    return result.map((map) => Transaction.fromMap(map)).toList();
-  }
-
   Future<List<Transaction>> getTransactionsByCustomer(int customerId) async {
     final db = await database;
     final result = await db.query(
@@ -511,25 +509,13 @@ class DatabaseHelper {
     final total = (txn.first['total_amount'] as num).toDouble();
     final currentPaid = (txn.first['paid_amount'] as num).toDouble();
     final updatedPaid = clampMoney(currentPaid + newPaidAmount, 0, double.infinity);
-    final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
+    final status = moneyEquals(updatedPaid, total) || updatedPaid >= total ? 'PAID' : 'ACTIVE';
     return await db.update(
       'transactions',
       {'paid_amount': updatedPaid, 'status': status},
       where: 'id = ?',
       whereArgs: [transactionId],
     );
-  }
-
-  Future<List<Map<String, dynamic>>> getOverdueTransactions() async {
-    final db = await database;
-    final cutoff = DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
-    return await db.rawQuery('''
-      SELECT t.*, c.name as customer_name
-      FROM transactions t
-      INNER JOIN customers c ON c.id = t.customer_id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0 AND t.date < ?
-      ORDER BY t.date ASC
-    ''', [cutoff]);
   }
 
   Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer({int? customerId}) async {
@@ -599,12 +585,7 @@ class DatabaseHelper {
     ''');
   }
 
-  // ─── Transaction Items ──────────────────────────────────────────────
-
-  Future<int> insertTransactionItem(TransactionItem item) async {
-    final db = await database;
-    return await db.insert('transaction_items', item.toMap());
-  }
+  // ─── Transactions with items (atomic) ───────────────────────────────
 
   Future<int> insertTransactionWithItems(
     int customerId,
@@ -651,17 +632,6 @@ class DatabaseHelper {
     });
   }
 
-  // ─── Dishes ─────────────────────────────────────────────────────────
-
-
-
-
-
-
-
-
-  /// One query for all ingredients of many dishes; stitched by dish in Dart.
-
   // ─── Spoilage ───────────────────────────────────────────────────────
 
   Future<int> insertSpoilage(SpoilageEntry entry) async {
@@ -690,85 +660,6 @@ class DatabaseHelper {
     return (result.first['total'] as num).toDouble();
   }
 
-  // ─── End of Day: leftovers, recap, tap resets ──────────────────────
-
-  /// Remaining reheat-plates for a dish (any past day, unconsumed).
-  Future<int> getReheatLeftover(int dishId) async {
-    final db = await database;
-    final result = await db.rawQuery(
-      "SELECT COALESCE(SUM(qty), 0) AS total FROM dish_leftovers "
-      "WHERE dish_id = ? AND disposition = 'reheat'",
-      [dishId],
-    );
-    return (result.first['total'] as int?) ?? 0;
-  }
-
-  /// Consumes one reheat plate - newest batch first. Returns remaining.
-  Future<int> consumeReheatLeftover(int dishId) async {
-    final db = await database;
-    final rows = await db.query('dish_leftovers',
-        where: "dish_id = ? AND disposition = 'reheat' AND qty > 0",
-        whereArgs: [dishId],
-        orderBy: 'created_at DESC',
-        limit: 1);
-    if (rows.isEmpty) return 0;
-    final row = rows.first;
-    final qty = row['qty'] as int;
-    if (qty <= 1) {
-      await db.delete('dish_leftovers', where: 'id = ?', whereArgs: [row['id']]);
-      return 0;
-    }
-    await db.update('dish_leftovers', {'qty': qty - 1},
-        where: 'id = ?', whereArgs: [row['id']]);
-    return qty - 1;
-  }
-
-  /// Records end-of-day leftovers for a dish.
-  Future<void> addLeftover(
-      int dishId, int qty, String disposition, String day) async {
-    if (qty <= 0) return;
-    final db = await database;
-    await db.insert('dish_leftovers', {
-      'dish_id': dishId,
-      'qty': qty,
-      'disposition': disposition,
-      'day': day,
-      'created_at': DateTime.now().toIso8601String(),
-    });
-  }
-
-  /// Per-dish sales breakdown for one calendar day ([dayStart] inclusive,
-
-  /// Deletes today's cash tap-sales only. Credit receipts are structurally
-  /// untouched. Returns rows removed.
-  Future<int> deleteTodayTapSales(String dayStart) async {
-    final db = await database;
-    return await db.transaction((txn) async {
-      final rows = await txn.rawQuery('''
-        SELECT id FROM transactions
-        WHERE is_cash_sale = 1 AND date >= ?
-      ''', [dayStart]);
-      for (final r in rows) {
-        await txn.delete('transaction_items',
-            where: 'transaction_id = ?', whereArgs: [r['id']]);
-        await txn.delete('transactions', where: 'id = ?', whereArgs: [r['id']]);
-      }
-      return rows.length;
-    });
-  }
-
-  /// Most recent cash tap today - powers the Undo button after restarts.
-  Future<int?> getLastTodayTapSaleId(String dayStart) async {
-    final db = await database;
-    final rows = await db.rawQuery('''
-      SELECT id FROM transactions
-      WHERE is_cash_sale = 1 AND date >= ?
-      ORDER BY date DESC LIMIT 1
-    ''', [dayStart]);
-    if (rows.isEmpty) return null;
-    return rows.first['id'] as int;
-  }
-
   /// Marks every unpaid credit receipt of [customerId] as fully paid.
   /// Cash tap-sales and owner-use rows are structurally excluded.
   /// Returns the number of receipts settled and the amount collected.
@@ -776,7 +667,7 @@ class DatabaseHelper {
     final db = await database;
     return await db.transaction((txn) async {
       final rows = await txn.rawQuery('''
-        SELECT id, (total_amount - paid_amount) AS remaining
+        SELECT id, total_amount, paid_amount, (total_amount - paid_amount) AS remaining
         FROM transactions
         WHERE customer_id = ? AND paid_amount < total_amount
           AND is_owner_consumption = 0 AND is_cash_sale = 0
@@ -784,10 +675,11 @@ class DatabaseHelper {
       double collected = 0;
       for (final r in rows) {
         final rem = (r['remaining'] as num).toDouble();
+        final total = (r['total_amount'] as num).toDouble();
         collected += rem;
         await txn.update(
           'transactions',
-          {'paid_amount': roundMoney(rem), 'status': 'PAID'},
+          {'paid_amount': roundMoney(total), 'status': 'PAID'},
           where: 'id = ?',
           whereArgs: [r['id']],
         );
@@ -899,12 +791,6 @@ class DatabaseHelper {
     ''', [isoSince, limit]);
   }
 
-  // ─── Menu sales (cash taps + credit dish lines) ─────────────────────
-
-  /// Combined Today-style summary across BOTH channels: instant cash taps
-
-
-
   Future<List<TransactionItem>> getItemsByTransaction(int transactionId) async {
     final db = await database;
     final result = await db.query(
@@ -913,14 +799,6 @@ class DatabaseHelper {
       whereArgs: [transactionId],
     );
     return result.map((map) => TransactionItem.fromMap(map)).toList();
-  }
-
-  Future<int> getActiveTransactionCount() async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as cnt FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
-    );
-    return (result.first['cnt'] as int);
   }
 
   // ─── Backup & Restore ───────────────────────────────────────────────

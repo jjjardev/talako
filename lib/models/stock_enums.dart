@@ -65,12 +65,3 @@ extension StockStatusX on StockStatus {
       .firstWhere((s) => s.dbValue == value, orElse: () => StockStatus.wellStocked);
 }
 
-/// What happens to unsold cooked plates at end of day.
-enum LeftoverDisposition {
-  reheat,
-  ingredients,
-  spoiled;
-
-  String get dbValue => name;
-}
-
