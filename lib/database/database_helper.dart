@@ -334,6 +334,18 @@ class DatabaseHelper {
     return names.toList()..sort();
   }
 
+  Future<bool> isItemNameTaken(String name, {int? excludeId}) async {
+    final norm = name.trim();
+    if (norm.isEmpty) return false;
+    final db = await database;
+    final where = excludeId == null
+        ? 'LOWER(TRIM(name)) = LOWER(TRIM(?))'
+        : 'LOWER(TRIM(name)) = LOWER(TRIM(?)) AND id != ?';
+    final args = excludeId == null ? [norm] : [norm, excludeId];
+    final result = await db.rawQuery('SELECT 1 FROM items WHERE $where LIMIT 1', args);
+    return result.isNotEmpty;
+  }
+
   Future<Item?> getItemById(int id) async {
     final db = await database;
     final result = await db.query('items', where: 'id = ?', whereArgs: [id]);

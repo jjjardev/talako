@@ -156,25 +156,53 @@ class InventoryProvider extends ChangeNotifier {
     required double price,
     required UsageType usageType,
   }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return 'Name cannot be empty';
+    try {
+      if (await _db.isItemNameTaken(trimmed)) {
+        return 'Item already exists';
+      }
+    } catch (e, s) {
+      logError('check-name-taken', e, s);
+    }
     try {
       await _db.insertItem(Item(
-        name: name.trim(),
+        name: trimmed,
         price: price,
         usageType: usageType,
       ));
       await loadInventory();
       return null;
-    } catch (_) {
+    } catch (e) {
+      if (e.toString().contains('UNIQUE') || e.toString().contains('2067')) {
+        return 'Item already exists';
+      }
       return 'Item already exists';
     }
   }
 
-  Future<void> updateItem(Item item) async {
+  /// Returns `null` on success, or an error string to show in UI.
+  Future<String?> updateItem(Item item) async {
+    final trimmed = item.name.trim();
+    if (trimmed.isEmpty) return 'Name cannot be empty';
     try {
-      await _db.updateItem(item);
-      await loadInventory();
+      if (await _db.isItemNameTaken(trimmed, excludeId: item.id)) {
+        return 'Item already exists';
+      }
     } catch (e, s) {
+      logError('check-name-taken', e, s);
+    }
+    try {
+      await _db.updateItem(item.copyWith(name: trimmed));
+      await loadInventory();
+      return null;
+    } catch (e, s) {
+      final msg = e.toString();
+      if (msg.contains('UNIQUE') || msg.contains('2067')) {
+        return 'Item already exists';
+      }
       logError('update-item', e, s);
+      return 'Failed to update item';
     }
   }
 
