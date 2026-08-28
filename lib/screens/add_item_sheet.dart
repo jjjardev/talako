@@ -14,6 +14,7 @@ class _AddItemSheetState extends State<AddItemSheet> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   UsageType _usageType = UsageType.retailOnly;
+  StockStatus _stockStatus = StockStatus.wellStocked;
   bool _saving = false;
 
   @override
@@ -41,6 +42,7 @@ class _AddItemSheetState extends State<AddItemSheet> {
           name: name,
           price: price,
           usageType: _usageType,
+          stockStatus: _stockStatus,
         );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -111,6 +113,33 @@ class _AddItemSheetState extends State<AddItemSheet> {
             ],
             selected: {_usageType},
             onSelectionChanged: (s) => setState(() => _usageType = s.first),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const SizedBox(width: 48, child: Text('Shelf:', style: TextStyle(fontSize: 13))),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _stockStatus = _stockStatus.next()),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _stockStatus.color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _stockStatus.color),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.circle, size: 9, color: _stockStatus.color),
+                      const SizedBox(width: 6),
+                      Text(_stockStatus.label,
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _stockStatus.color)),
+                      const SizedBox(width: 6),
+                      Text('tap to change', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                    ]),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           SizedBox(

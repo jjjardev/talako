@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/item.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
+import '../utils/currency_format.dart';
 
 class ShoppingListScreen extends StatelessWidget {
   const ShoppingListScreen({super.key});
@@ -43,10 +45,28 @@ class ShoppingListScreen extends StatelessWidget {
           ],
 
         if (items.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Center(
             child: FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+              icon: const Icon(Icons.done_all, size: 18),
+              label: Text('Restock all (${items.length})'),
+              onPressed: () async {
+                final count = items.length;
+                final ids = items.map((i) => i.id!).toList();
+                await context.read<InventoryProvider>().restock(ids);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('$count item(s) restocked — all now Well Stocked'),
+                    duration: const Duration(seconds: 2),
+                  ));
+                }
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: OutlinedButton.icon(
               icon: const Icon(Icons.share, size: 18),
               label: const Text('Share List'),
               onPressed: () => shareShoppingList(inv),
@@ -76,14 +96,20 @@ class ShoppingListScreen extends StatelessWidget {
 /// Shared with StockHomeScreen's AppBar so it is reachable from any state.
 void shareShoppingList(InventoryProvider inv) {
   final items = inv.shoppingList;
-  final buffer = StringBuffer('SHOPPING LIST\n==============\n');
+  final now = DateTime.now();
+  final dateStr = DateFormat('MMM dd, yyyy').format(now);
+  final buffer = StringBuffer('SHOPPING LIST — $dateStr (${items.length} items)\n');
+  buffer.writeln('==============');
   if (items.isNotEmpty) {
-    buffer.writeln('\nNEEDED:');
+    buffer.writeln();
     for (final i in items) {
-      buffer.writeln('- ${i.name} (${i.stockStatus.label})');
+      final pricePart = i.usageType == UsageType.ingredientOnly ? '' : ' — ${formatCurrency(i.price)}';
+      buffer.writeln('- ${i.name}$pricePart (${i.stockStatus.label})');
     }
+  } else {
+    buffer.writeln('\nNothing needed — all well stocked.');
   }
-  Share.share(buffer.toString(), subject: 'TalaKo Shopping List');
+  Share.share(buffer.toString(), subject: 'TalaKo Shopping List ($dateStr)');
 }
 
 class _RestockRow extends StatefulWidget {

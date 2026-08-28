@@ -139,7 +139,13 @@ class InventoryProvider extends ChangeNotifier {
 
   // ─── Shelf actions ─────────────────────────────────────────────────
 
+  final Map<int, DateTime> _lastCycle = {};
+
   Future<void> cycleStockStatus(int itemId) async {
+    final now = DateTime.now();
+    final last = _lastCycle[itemId];
+    if (last != null && now.difference(last).inMilliseconds < 350) return;
+    _lastCycle[itemId] = now;
     final item = itemById(itemId);
     if (item == null) return;
     try {
@@ -155,6 +161,7 @@ class InventoryProvider extends ChangeNotifier {
     required String name,
     required double price,
     required UsageType usageType,
+    StockStatus stockStatus = StockStatus.wellStocked,
   }) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return 'Name cannot be empty';
@@ -170,6 +177,7 @@ class InventoryProvider extends ChangeNotifier {
         name: trimmed,
         price: price,
         usageType: usageType,
+        stockStatus: stockStatus,
       ));
       await loadInventory();
       return null;
