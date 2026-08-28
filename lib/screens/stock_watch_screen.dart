@@ -360,27 +360,51 @@ class _ItemEditorSheet extends StatefulWidget {
 class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late UsageType _usageType = widget.item.usageType;
   late StockStatus _stockStatus = widget.item.stockStatus;
+  late final TextEditingController _name =
+      TextEditingController(text: widget.item.name);
   late final TextEditingController _notes =
       TextEditingController(text: widget.item.notes ?? '');
   late final TextEditingController _price =
       TextEditingController(text: widget.item.price.toString());
+  String? _nameError;
+  bool _saving = false;
 
   @override
   void dispose() {
+    _name.dispose();
     _notes.dispose();
     _price.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
+    final newName = _name.text.trim();
+    if (newName.isEmpty) {
+      setState(() => _nameError = 'Name cannot be empty');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _nameError = null;
+    });
     final price = double.tryParse(_price.text.trim()) ?? widget.item.price;
-    await context.read<InventoryProvider>().updateItem(widget.item.copyWith(
-          price: price <= 0 ? null : price,
-          usageType: _usageType,
-          stockStatus: _stockStatus,
-          notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
-          clearNotes: _notes.text.trim().isEmpty,
-        ));
+    final error = await context.read<InventoryProvider>().updateItem(
+          widget.item.copyWith(
+            name: newName,
+            price: price <= 0 ? null : price,
+            usageType: _usageType,
+            stockStatus: _stockStatus,
+            notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+            clearNotes: _notes.text.trim().isEmpty,
+          ),
+        );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (error != null) {
+      setState(() => _nameError = error);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
     if (mounted) Navigator.pop(context);
   }
 
@@ -421,8 +445,34 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(widget.item.name,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Icon(Icons.edit_outlined, size: 20, color: Colors.teal),
+                const SizedBox(width: 8),
+                const Text('Edit Item',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Item name',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                errorText: _nameError,
+                prefixIcon: const Icon(Icons.label_outline, size: 20),
+              ),
+              onChanged: (_) {
+                if (_nameError != null) setState(() => _nameError = null);
+              },
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Renaming only changes the shelf. Past receipts keep the old name for audit.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
             if (_usageType == UsageType.ingredientOnly) ...[
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
@@ -483,16 +533,21 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             Row(
               children: [
                 TextButton.icon(
-                  onPressed: _delete,
+                  onPressed: _saving ? null : _delete,
                   icon: const Icon(Icons.delete_outline, size: 18),
                   label: const Text('Delete'),
                   style: TextButton.styleFrom(foregroundColor: Colors.red),
                 ),
                 const Spacer(),
                 FilledButton(
-                  onPressed: _save,
+                  onPressed: _saving ? null : _save,
                   style: FilledButton.styleFrom(backgroundColor: Colors.teal),
-                  child: const Text('Save'),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save'),
                 ),
               ],
             ),
