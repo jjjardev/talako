@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/item.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
+import '../utils/currency_format.dart';
+import '../utils/snackbars.dart';
 import '../widgets/alphabet_strip.dart';
 
 class StockWatchScreen extends StatefulWidget {
@@ -35,7 +37,13 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
     return Consumer<InventoryProvider>(
       builder: (context, inv, _) {
         final items = inv.filteredItems;
-        final showAzStrip = inv.sort == ShelfSort.alpha;
+        final showAzStrip = true; // always show A-Z for findability, even in urgent
+        // Badge counts for chips (quantity-free, read-only)
+        final allCount = inv.items.length;
+        final retailCount = inv.items.where((i) => i.usageType != UsageType.ingredientOnly).length;
+        final ingCount = inv.items.where((i) => i.isIngredient).length;
+        final lowOutCount = inv.shoppingList.length;
+        final coldCount = inv.items.where((i) => i.stockStatus == StockStatus.cold).length;
         return Column(
           children: [
             Row(
@@ -53,11 +61,11 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                             padding: const EdgeInsets.only(right: 8),
                             child: ChoiceChip(
                               label: Text(switch (f) {
-                                StockFilter.all => 'All',
-                                StockFilter.retail => 'Retail',
-                                StockFilter.ingredients => 'Ingredients',
-                                StockFilter.lowOrOut => 'Low / Out',
-                                StockFilter.cold => 'Cold',
+                                StockFilter.all => 'All ($allCount)',
+                                StockFilter.retail => 'Retail ($retailCount)',
+                                StockFilter.ingredients => 'Ingredients ($ingCount)',
+                                StockFilter.lowOrOut => 'Low / Out ($lowOutCount)',
+                                StockFilter.cold => 'Cold ($coldCount)',
                               }),
                               selected: inv.filter == f,
                               onSelected: (_) => inv.setFilter(f),
@@ -181,6 +189,15 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
           ),
+          if (inv.filter != StockFilter.all) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+              icon: const Icon(Icons.filter_alt_off, size: 18),
+              label: const Text('Clear filter'),
+              onPressed: () => inv.setFilter(StockFilter.all),
+            ),
+          ],
         ],
       ),
     );
@@ -204,7 +221,11 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.bold)),
             ),
-            for (final status in StockStatus.values)
+            for (final status in [
+              StockStatus.wellStocked,
+              StockStatus.runningLow,
+              StockStatus.outOfStock
+            ])
               ListTile(
                 dense: true,
                 leading: Icon(Icons.circle,
@@ -227,6 +248,19 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 inv.restock([item.id!]);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.archive_outlined,
+                  size: 20, color: StockStatus.cold.color),
+              title: Text(StockStatus.cold.label),
+              subtitle: const Text('Hidden from Shopping — for discontinued items'),
+              trailing: item.stockStatus == StockStatus.cold
+                  ? const Icon(Icons.check, size: 18, color: Colors.teal)
+                  : null,
+              onTap: () {
+                Navigator.pop(ctx);
+                inv.setStockStatus(item.id!, StockStatus.cold);
               },
             ),
             ListTile(
@@ -268,59 +302,106 @@ class _ItemCard extends StatelessWidget {
     required this.onQuickActions,
   });
 
+  String _stampHint() {
+    final iso = item.lastStatusUpdated ?? item.lastRestocked;
+    if (iso == null) return '';
+    try {
+      final dt = DateTime.parse(iso);
+      final days = DateTime.now().difference(dt).inDays;
+      if (days <= 0) return '• today';
+      if (days == 1) return '• 1d ago';
+      return '• ${days}d ago';
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final statusColor = item.stockStatus.color;
     final statusLabel = item.stockStatus.label;
+    final showPrice = item.usageType != UsageType.ingredientOnly;
+    final stamp = _stampHint();
 
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: () {
+        onTap: () async {
           HapticFeedback.selectionClick();
-          context.read<InventoryProvider>().cycleStockStatus(item.id!);
+          final prev = item.stockStatus;
+          final next = prev.next();
+          await context.read<InventoryProvider>().cycleStockStatus(item.id!);
+          if (!context.mounted) return;
+          showAutoDismissSnackBar(
+            ScaffoldMessenger.of(context),
+            message: '${item.name} → ${next.label}',
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => context.read<InventoryProvider>().setStockStatus(item.id!, prev),
+            ),
+          );
         },
         onLongPress: onQuickActions,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(height: 5, color: statusColor),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
-                      if (item.usageType != UsageType.retailOnly)
-                        Icon(item.usageType.icon, size: 14, color: Colors.grey),
-                    ],
-                  ),
-                  const Spacer(),
-                  Row(
-                    children: [
-                      Icon(Icons.circle, size: 10, color: statusColor),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          statusLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: statusColor, fontWeight: FontWeight.w600),
-                        ),
+                        if (item.usageType != UsageType.retailOnly)
+                          Icon(item.usageType.icon, size: 14, color: Colors.grey),
+                      ],
+                    ),
+                    if (showPrice) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        formatCurrency(item.price),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                       ),
                     ],
-                  ),
-                ],
+                    const Spacer(),
+                    Row(
+                      children: [
+                        Icon(Icons.circle, size: 10, color: statusColor),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            stamp.isEmpty ? statusLabel : '$statusLabel $stamp',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: statusColor, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(Icons.touch_app, size: 10, color: Colors.grey.shade400),
+                        const SizedBox(width: 3),
+                        Text('Tap to cycle',
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -388,6 +469,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _nameError = null;
     });
     final price = double.tryParse(_price.text.trim()) ?? widget.item.price;
+    final statusChanged = _stockStatus != widget.item.stockStatus;
+    final nowIso = statusChanged ? DateTime.now().toIso8601String() : null;
     final error = await context.read<InventoryProvider>().updateItem(
           widget.item.copyWith(
             name: newName,
@@ -396,6 +479,8 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             stockStatus: _stockStatus,
             notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
             clearNotes: _notes.text.trim().isEmpty,
+            lastStatusUpdated: nowIso,
+            lastRestocked: (_stockStatus == StockStatus.wellStocked && statusChanged) ? nowIso : null,
           ),
         );
     if (!mounted) return;

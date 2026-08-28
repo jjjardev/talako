@@ -36,17 +36,23 @@ class StockHomeScreen extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: ValueListenableBuilder<StockSegment>(
-              valueListenable: segment,
-              builder: (context, s, _) => SegmentedButton<StockSegment>(
-                segments: const [
-                  ButtonSegment(value: StockSegment.shelf, label: Text('Shelf')),
-                  ButtonSegment(
-                      value: StockSegment.shopping, label: Text('Shopping')),
-                ],
-                selected: {s},
-                onSelectionChanged: (sel) => segment.value = sel.first,
-              ),
+            child: Consumer<InventoryProvider>(
+              builder: (context, inv, _) {
+                final shoppingCount = inv.shoppingList.length;
+                return ValueListenableBuilder<StockSegment>(
+                  valueListenable: segment,
+                  builder: (context, s, _) => SegmentedButton<StockSegment>(
+                    segments: [
+                      const ButtonSegment(value: StockSegment.shelf, label: Text('Shelf')),
+                      ButtonSegment(
+                          value: StockSegment.shopping,
+                          label: Text(shoppingCount > 0 ? 'Shopping ($shoppingCount)' : 'Shopping')),
+                    ],
+                    selected: {s},
+                    onSelectionChanged: (sel) => segment.value = sel.first,
+                  ),
+                );
+              },
             ),
           ),
           Expanded(

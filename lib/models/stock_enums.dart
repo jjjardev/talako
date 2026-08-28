@@ -52,12 +52,11 @@ extension StockStatusX on StockStatus {
         StockStatus.cold => Colors.blueGrey,
       };
 
-  /// Tap-cycle order: destructive "Out of Stock" is reachable but the
-  /// loop returns to the healthy state first.
+  /// Tap-cycle: Well → Low → Out → Well. Cold is Archive-only, not in tap loop.
   StockStatus next() => switch (this) {
         StockStatus.wellStocked => StockStatus.runningLow,
         StockStatus.runningLow => StockStatus.outOfStock,
-        StockStatus.outOfStock => StockStatus.cold,
+        StockStatus.outOfStock => StockStatus.wellStocked,
         StockStatus.cold => StockStatus.wellStocked,
       };
 
