@@ -27,6 +27,19 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "app"
+    productFlavors {
+        create("prod") {
+            dimension = "app"
+        }
+        create("demo") {
+            dimension = "app"
+            applicationIdSuffix = ".demo"
+            resValue("string", "app_name", "TalaKo Demo")
+            versionNameSuffix = "-demo"
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
