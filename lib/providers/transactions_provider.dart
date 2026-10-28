@@ -6,8 +6,8 @@ import '../utils/app_logger.dart';
 class TransactionItemLine {
   final String itemName;
   final int quantity;
-  final double price;
-  final double subtotal;
+  final int price;
+  final int subtotal;
 
   TransactionItemLine({
     required this.itemName,
@@ -22,8 +22,8 @@ class ActiveTransaction {
   final int customerId;
   final String customerName;
   final String date;
-  final double totalAmount;
-  final double paidAmount;
+  final int totalAmount;
+  final int paidAmount;
   final List<TransactionItemLine> items;
 
   ActiveTransaction({
@@ -36,14 +36,14 @@ class ActiveTransaction {
     this.items = const [],
   });
 
-  double get remaining => totalAmount - paidAmount;
+  int get remaining => totalAmount - paidAmount;
 }
 
 class GroupedCustomer {
   final int customerId;
   final String customerName;
-  final double totalAmount;
-  final double paidAmount;
+  final int totalAmount;
+  final int paidAmount;
   final int transactionCount;
   final String oldestDate;
   final String latestDate;
@@ -58,7 +58,7 @@ class GroupedCustomer {
     required this.latestDate,
   });
 
-  double get remaining => totalAmount - paidAmount;
+  int get remaining => totalAmount - paidAmount;
 }
 
 class TransactionsProvider extends ChangeNotifier {
@@ -68,8 +68,6 @@ class TransactionsProvider extends ChangeNotifier {
   bool _isGrouped = false;
 
   TransactionsProvider() {
-    // Restore the owner's preferred Credit Book layout across restarts.
-    // Guarded: pure-Dart consumers (tests) may lack the plugin.
     SharedPreferences.getInstance().then((p) {
       final stored = p.getBool('credit_grouped');
       if (stored != null && stored != _isGrouped) {
@@ -88,21 +86,22 @@ class TransactionsProvider extends ChangeNotifier {
   void setGrouped(bool value) {
     if (_isGrouped == value) return;
     _isGrouped = value;
-    SharedPreferences.getInstance().then((p) => p.setBool('credit_grouped', value));
+    SharedPreferences.getInstance()
+        .then((p) => p.setBool('credit_grouped', value));
     notifyListeners();
   }
 
-  double get totalOutstanding {
-    double sum = 0;
+  int get totalOutstanding {
+    var sum = 0;
     for (final t in _activeTransactions) {
       sum += t.remaining;
     }
     return sum;
   }
 
-  double get totalOverdue {
+  int get totalOverdue {
     final cutoff = DateTime.now().subtract(const Duration(days: 14));
-    double sum = 0;
+    var sum = 0;
     for (final t in _activeTransactions) {
       if (DateTime.parse(t.date).isBefore(cutoff)) {
         sum += t.remaining;
@@ -113,7 +112,7 @@ class TransactionsProvider extends ChangeNotifier {
 
   int get overdueCount {
     final cutoff = DateTime.now().subtract(const Duration(days: 14));
-    int count = 0;
+    var count = 0;
     for (final t in _activeTransactions) {
       if (DateTime.parse(t.date).isBefore(cutoff)) {
         count++;
@@ -131,13 +130,13 @@ class TransactionsProvider extends ChangeNotifier {
       final items = await _db.getItemsForTransactions(ids);
       for (final item in items) {
         itemsByTxn.putIfAbsent(item.transactionId, () => []).add(
-          TransactionItemLine(
-            itemName: item.itemName,
-            quantity: item.quantity,
-            price: item.price,
-            subtotal: item.subtotal,
-          ),
-        );
+              TransactionItemLine(
+                itemName: item.itemName,
+                quantity: item.quantity,
+                price: item.price,
+                subtotal: item.subtotal,
+              ),
+            );
       }
     } catch (e, s) {
       logError('items-for-transactions', e, s);
@@ -148,8 +147,8 @@ class TransactionsProvider extends ChangeNotifier {
         customerId: r['customer_id'] as int,
         customerName: r['customer_name'] as String? ?? '',
         date: r['date'] as String,
-        totalAmount: (r['total_amount'] as num).toDouble(),
-        paidAmount: (r['paid_amount'] as num).toDouble(),
+        totalAmount: (r['total_amount'] as num).toInt(),
+        paidAmount: (r['paid_amount'] as num).toInt(),
         items: itemsByTxn[r['id']] ?? const [],
       );
     }).toList();
@@ -166,9 +165,11 @@ class TransactionsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<ActiveTransaction>> fetchCustomerTransactions(int customerId) async {
+  Future<List<ActiveTransaction>> fetchCustomerTransactions(
+      int customerId) async {
     try {
-      final rows = await _db.getActiveTransactionsWithCustomer(customerId: customerId);
+      final rows =
+          await _db.getActiveTransactionsWithCustomer(customerId: customerId);
       return await _buildActiveTransactions(rows);
     } catch (e, s) {
       logError('fetch-customer-transactions', e, s);
@@ -179,15 +180,17 @@ class TransactionsProvider extends ChangeNotifier {
   Future<void> loadGroupedTransactions() async {
     try {
       final rows = await _db.getGroupedActiveTransactions();
-      _groupedCustomers = rows.map((r) => GroupedCustomer(
-        customerId: r['customer_id'] as int,
-        customerName: r['customer_name'] as String,
-        totalAmount: (r['total_amount'] as num).toDouble(),
-        paidAmount: (r['paid_amount'] as num).toDouble(),
-        transactionCount: (r['transaction_count'] as int),
-        oldestDate: r['oldest_date'] as String,
-        latestDate: r['latest_date'] as String,
-      )).toList();
+      _groupedCustomers = rows
+          .map((r) => GroupedCustomer(
+                customerId: r['customer_id'] as int,
+                customerName: r['customer_name'] as String,
+                totalAmount: (r['total_amount'] as num).toInt(),
+                paidAmount: (r['paid_amount'] as num).toInt(),
+                transactionCount: (r['transaction_count'] as int),
+                oldestDate: r['oldest_date'] as String,
+                latestDate: r['latest_date'] as String,
+              ))
+          .toList();
     } catch (e, s) {
       logError('load-grouped-transactions', e, s);
       _groupedCustomers = [];
@@ -203,32 +206,58 @@ class TransactionsProvider extends ChangeNotifier {
   }
 
   Future<int> addTransactionWithItemNames(
-    int customerId,
+    int? customerId,
     List<String> itemNames,
     List<int> quantities,
-    List<double> prices,
-  ) async {
+    List<int> prices, {
+    bool isCashSale = false,
+  }) async {
     final items = <Map<String, dynamic>>[];
-    for (int i = 0; i < itemNames.length; i++) {
-      final subtotal = quantities[i] * prices[i];
+    for (var i = 0; i < itemNames.length; i++) {
       items.add({
         'item_name': itemNames[i],
         'quantity': quantities[i],
         'price': prices[i],
-        'subtotal': subtotal.toDouble(),
+        'subtotal': quantities[i] * prices[i],
       });
     }
-    final txnId = await _db.insertTransactionWithItems(customerId, items);
+    final txnId = await _db.insertTransactionWithItems(
+      customerId,
+      items,
+      isCashSale: isCashSale,
+    );
     await _refreshAfterMutation();
     return txnId;
   }
 
-
-  Future<void> processPayment(int transactionId, double amount) async {
+  Future<void> processPayment(int transactionId, int amount) async {
     try {
       await _db.updateTransactionPayment(transactionId, amount);
     } catch (e, s) {
       logError('process-payment', e, s);
+    }
+    await _refreshAfterMutation();
+  }
+
+  Future<Map<String, dynamic>?> deleteTransactionWithSnapshot(
+      int transactionId) async {
+    try {
+      final snapshot = await _db.snapshotTransaction(transactionId);
+      await _db.deleteTransaction(transactionId);
+      await _refreshAfterMutation();
+      return snapshot;
+    } catch (e, s) {
+      logError('delete-transaction', e, s);
+      return null;
+    }
+  }
+
+  Future<void> restoreTransactionSnapshot(
+      Map<String, dynamic> snapshot) async {
+    try {
+      await _db.restoreTransactionSnapshot(snapshot);
+    } catch (e, s) {
+      logError('restore-transaction', e, s);
     }
     await _refreshAfterMutation();
   }
@@ -242,20 +271,18 @@ class TransactionsProvider extends ChangeNotifier {
     await _refreshAfterMutation();
   }
 
-  /// Settlement-day bulk: marks every unpaid credit receipt of the
-  /// customer as PAID in one update. Returns (count, amount collected).
-  Future<(int, double)?> markAllPaidForCustomer(int customerId) async {
+  Future<(int, int)?> markAllPaidForCustomer(int customerId) async {
     try {
       final r = await _db.markAllCustomerReceiptsPaid(customerId);
       await _refreshAfterMutation();
-      return (r['settled']!.toInt(), r['collected']!);
+      return (r['settled']!, r['collected']!);
     } catch (e, s) {
       logError('mark-all-paid', e, s);
       return null;
     }
   }
 
-  Future<void> reversePayment(int transactionId, double amount) async {
+  Future<void> reversePayment(int transactionId, int amount) async {
     try {
       await _db.reverseTransactionPayment(transactionId, amount);
     } catch (e, s) {

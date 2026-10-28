@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/transactions_provider.dart';
+import '../providers/customers_provider.dart';
+import '../providers/inventory_provider.dart';
+import '../utils/backup_service.dart';
 import '../utils/currency_format.dart';
 import '../utils/date_format.dart';
 import '../utils/pay_flow.dart';
@@ -83,6 +86,12 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                     },
                     icon: const Icon(Icons.add),
                     label: const Text('Record a credit'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => _restoreBackup(context, provider),
+                    icon: const Icon(Icons.restore, size: 18),
+                    label: const Text('Restore a backup'),
                   ),
                 ],
               ),
@@ -205,6 +214,24 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
     );
   }
 
+  Future<void> _restoreBackup(
+      BuildContext context, TransactionsProvider provider) async {
+    final error = await BackupService.pickAndImportJson();
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    context.read<CustomersProvider>().loadCustomers();
+    context.read<InventoryProvider>().loadInventory();
+    await provider.loadActiveTransactions();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup restored successfully')));
+    }
+  }
+
   List<ActiveTransaction> _filteredIndividual(TransactionsProvider provider) {
     if (_searchQuery.isEmpty) return provider.activeTransactions;
     return provider.activeTransactions.where((t) =>
@@ -230,8 +257,8 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
   }
 
   Widget _buildSummaryBar(TransactionsProvider provider) {
-    double overdueTotal = provider.totalOverdue;
-    double total = 0;
+    final overdueTotal = provider.totalOverdue;
+    var total = 0;
 
     if (provider.isGrouped) {
       for (final g in provider.groupedCustomers) {

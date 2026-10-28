@@ -3,7 +3,7 @@ import 'stock_enums.dart';
 class Item {
   final int? id;
   final String name;
-  final double price;
+  final int price;
   final String createdAt;
   final UsageType usageType;
   final StockStatus stockStatus;
@@ -37,8 +37,6 @@ class Item {
       'notes': notes,
       'last_status_updated': lastStatusUpdated,
       'last_restocked': lastRestocked,
-      // freshness_status / perishable columns are legacy (v5 schema);
-      // intentionally no longer written - defaults apply.
     };
   }
 
@@ -46,7 +44,7 @@ class Item {
     return Item(
       id: map['id'] as int?,
       name: map['name'] as String,
-      price: (map['price'] as num).toDouble(),
+      price: (map['price'] as num).toInt(),
       createdAt: map['created_at'] as String?,
       usageType: UsageTypeX.fromDb(map['usage_type'] as String?),
       stockStatus: StockStatusX.fromDb(map['stock_status'] as String?),
@@ -59,7 +57,7 @@ class Item {
   Item copyWith({
     int? id,
     String? name,
-    double? price,
+    int? price,
     String? createdAt,
     UsageType? usageType,
     StockStatus? stockStatus,

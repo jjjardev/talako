@@ -28,7 +28,7 @@ class CustomersProvider extends ChangeNotifier {
         final name = row['name'] as String;
         if (!_matchesSearch(name)) continue;
         final customer = Customer(id: id, name: name, createdAt: row['created_at'] as String);
-        final balance = (row['balance'] as num).toDouble();
+        final balance = (row['balance'] as num).toInt();
         final overdue = overdueIds.contains(id);
         summaries.add(CustomerSummary(customer: customer, balance: balance, hasOverdue: overdue));
       }

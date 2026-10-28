@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import 'package:path/path.dart';
+
 import '../models/spoilage_entry.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
@@ -10,8 +14,9 @@ import '../utils/money.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
-  /// Overridable so test suites can isolate their databases from each other.
   static String databaseName = 'talako.db';
+  static const int schemaVersion = 7;
+
   Database? _database;
   Future<void>? _initFuture;
 
@@ -40,79 +45,151 @@ class DatabaseHelper {
   Future<Database> _initDB(String fileName) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, fileName);
+    await _guardDatabaseFile(path);
     return await openDatabase(
       path,
-      version: 6,
+      version: schemaVersion,
       onConfigure: _configureDB,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
+      onOpen: _onOpen,
     );
   }
 
-  /// SQLite ignores foreign keys (and therefore ON DELETE CASCADE) unless
-  /// this pragma is set on every connection.
+  /// Android's default SQLite error handler deletes a corrupt database during
+  /// open. Validate a throwaway copy first so a corrupt live file is never
+  /// destroyed and the caller can show the recovery screen.
+  Future<void> _guardDatabaseFile(String path) async {
+    final file = File(path);
+    if (!await file.exists() || await file.length() == 0) return;
+
+    final raf = await file.open();
+    final header = await raf.read(16);
+    await raf.close();
+    if (String.fromCharCodes(header) != 'SQLite format 3\u0000') {
+      throw Exception('Database file is not a valid SQLite database');
+    }
+
+    final probe = File('$path.preflight');
+    if (await probe.exists()) await probe.delete();
+    await file.copy(probe.path);
+    Database? incoming;
+    try {
+      incoming = await openDatabase(
+        probe.path,
+        readOnly: true,
+        singleInstance: false,
+      );
+      final integrity = await incoming.rawQuery('PRAGMA integrity_check');
+      if (integrity.isEmpty ||
+          integrity.first.values.first.toString().toLowerCase() != 'ok') {
+        throw Exception('Database integrity check failed');
+      }
+    } finally {
+      try {
+        await incoming?.close();
+      } catch (_) {}
+      if (await probe.exists()) await probe.delete();
+    }
+  }
+
   Future<void> _configureDB(Database db) async {
+    var version = 0;
+    try {
+      version = await db.getVersion();
+    } catch (_) {}
+    if (version > 0 && version < schemaVersion) {
+      await db.execute('PRAGMA foreign_keys = OFF');
+    } else {
+      await db.execute('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  Future<void> _onOpen(Database db) async {
     await db.execute('PRAGMA foreign_keys = ON');
+    await _repairStatuses(db);
+  }
+
+  Future<void> _repairStatuses(Database db) async {
+    try {
+      await db.rawUpdate('''
+        UPDATE transactions SET status =
+          CASE WHEN paid_amount >= total_amount THEN 'PAID' ELSE 'ACTIVE' END
+        WHERE status <> CASE WHEN paid_amount >= total_amount THEN 'PAID' ELSE 'ACTIVE' END
+      ''');
+    } catch (e, s) {
+      logError('status-repair', e, s);
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
+    await _createV7Tables(db);
+    await _createInventoryTables(db);
+    await _createIndexes(db);
+  }
+
+  Future<void> _createV7Tables(Database db, {String suffix = ''}) async {
     await db.execute('''
-      CREATE TABLE items (
+      CREATE TABLE items$suffix (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        price REAL NOT NULL,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        price INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         usage_type TEXT NOT NULL DEFAULT 'retail_only',
         stock_status TEXT NOT NULL DEFAULT 'well_stocked',
-        freshness_status TEXT NOT NULL DEFAULT 'fresh',
-        perishable INTEGER NOT NULL DEFAULT 0,
         notes TEXT,
         last_status_updated TEXT,
         last_restocked TEXT
       )
     ''');
     await db.execute('''
-      CREATE TABLE customers (
+      CREATE TABLE customers$suffix (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
         created_at TEXT NOT NULL
       )
     ''');
     await db.execute('''
-      CREATE TABLE transactions (
+      CREATE TABLE transactions$suffix (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        customer_id INTEGER NOT NULL,
+        customer_id INTEGER,
         date TEXT NOT NULL,
-        total_amount REAL NOT NULL,
-        paid_amount REAL NOT NULL DEFAULT 0,
+        total_amount INTEGER NOT NULL DEFAULT 0,
+        paid_amount INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'ACTIVE',
-        dish_id INTEGER,
         is_owner_consumption INTEGER NOT NULL DEFAULT 0,
         is_cash_sale INTEGER NOT NULL DEFAULT 0,
-        deducted_ingredients INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (customer_id) REFERENCES customers(id)
       )
     ''');
     await db.execute('''
-      CREATE TABLE transaction_items (
+      CREATE TABLE transaction_items$suffix (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         transaction_id INTEGER NOT NULL,
+        item_id INTEGER,
         item_name TEXT NOT NULL,
         quantity INTEGER NOT NULL DEFAULT 1,
-        price REAL NOT NULL,
-        subtotal REAL NOT NULL,
-        dish_id INTEGER,
-        unit_capital REAL NOT NULL DEFAULT 0,
-        FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+        price INTEGER NOT NULL DEFAULT 0,
+        subtotal INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+        FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE SET NULL
       )
     ''');
-    await _createInventoryTables(db);
-    await _createIndexes(db);
+    await db.execute('''
+      CREATE TABLE spoilage_log$suffix (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER,
+        estimated_value INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        date TEXT NOT NULL,
+        FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE SET NULL
+      )
+    ''');
   }
 
   Future<void> _createInventoryTables(Database db) async {
     await db.execute('''
-      CREATE TABLE dishes (
+      CREATE TABLE IF NOT EXISTS dishes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         price REAL NOT NULL,
@@ -121,7 +198,7 @@ class DatabaseHelper {
       )
     ''');
     await db.execute('''
-      CREATE TABLE dish_ingredients (
+      CREATE TABLE IF NOT EXISTS dish_ingredients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dish_id INTEGER NOT NULL,
         item_id INTEGER NOT NULL,
@@ -131,16 +208,7 @@ class DatabaseHelper {
       )
     ''');
     await db.execute('''
-      CREATE TABLE spoilage_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        item_id INTEGER NOT NULL,
-        estimated_value REAL NOT NULL,
-        note TEXT,
-        date TEXT NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE dish_leftovers (
+      CREATE TABLE IF NOT EXISTS dish_leftovers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dish_id INTEGER NOT NULL,
         qty INTEGER NOT NULL DEFAULT 0,
@@ -182,7 +250,9 @@ class DatabaseHelper {
           'date': credit['timestamp'],
           'total_amount': credit['total'],
           'paid_amount': credit['paid_amount'],
-          'status': (credit['paid_amount'] as num) >= (credit['total'] as num) ? 'PAID' : 'ACTIVE',
+          'status': (credit['paid_amount'] as num) >= (credit['total'] as num)
+              ? 'PAID'
+              : 'ACTIVE',
         });
         await db.insert('transaction_items', {
           'transaction_id': txnId,
@@ -201,7 +271,8 @@ class DatabaseHelper {
           "ALTER TABLE items ADD COLUMN stock_status TEXT NOT NULL DEFAULT 'well_stocked'");
       await db.execute(
           "ALTER TABLE items ADD COLUMN freshness_status TEXT NOT NULL DEFAULT 'fresh'");
-      await db.execute('ALTER TABLE items ADD COLUMN perishable INTEGER NOT NULL DEFAULT 0');
+      await db.execute(
+          'ALTER TABLE items ADD COLUMN perishable INTEGER NOT NULL DEFAULT 0');
       await db.execute('ALTER TABLE items ADD COLUMN notes TEXT');
       await db.execute('ALTER TABLE items ADD COLUMN last_status_updated TEXT');
       await db.execute('ALTER TABLE items ADD COLUMN last_restocked TEXT');
@@ -211,7 +282,6 @@ class DatabaseHelper {
       await _createInventoryTables(db);
     }
     if (oldVersion < 4) {
-      // Real v3 installs carry pre-v4 shapes; guarded ALTERs are idempotent.
       await _ensureColumn(db, 'dishes', 'capital', 'REAL NOT NULL DEFAULT 0');
       await _ensureColumn(db, 'transaction_items', 'dish_id', 'INTEGER');
       await _ensureColumn(
@@ -236,24 +306,144 @@ class DatabaseHelper {
     if (oldVersion < 6) {
       await _createIndexes(db);
     }
+    if (oldVersion < schemaVersion) {
+      await _migrateToV7(db);
+    }
   }
 
-  /// Hot-path indexes. Safe on every shape: called after all tables and
-  /// columns exist (end of onCreate / final upgrade step).
+  Future<void> _backupBeforeV7(Database db) async {
+    try {
+      final source = File(db.path);
+      if (!await source.exists()) return;
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final target = '${db.path}.pre_v7_$stamp.db';
+      await source.copy(target);
+      logInfo('Pre-v7 backup written to $target');
+    } catch (e, s) {
+      logError('pre-v7-backup', e, s);
+      rethrow;
+    }
+  }
+
+  Future<void> _migrateToV7(Database db) async {
+    await _backupBeforeV7(db);
+
+    final duplicates = await db.rawQuery('''
+      SELECT LOWER(TRIM(name)) AS norm, GROUP_CONCAT(name, ' | ') AS names
+      FROM items
+      GROUP BY norm
+      HAVING COUNT(*) > 1
+    ''');
+    if (duplicates.isNotEmpty) {
+      final names = duplicates.map((r) => r['names']).join('; ');
+      throw Exception(
+          'Cannot migrate: item names differ only by case/whitespace: $names');
+    }
+
+    await _createV7Tables(db, suffix: '_v7');
+
+    await db.execute('''
+      INSERT INTO items_v7 (id, name, price, created_at, usage_type,
+        stock_status, notes, last_status_updated, last_restocked)
+      SELECT id, name, CAST(ROUND(price * 100) AS INTEGER), created_at,
+        usage_type, stock_status, notes, last_status_updated, last_restocked
+      FROM items
+    ''');
+
+    await db.execute('''
+      INSERT INTO customers_v7 (id, name, created_at)
+      SELECT id, name, created_at FROM customers
+    ''');
+
+    await db.execute('''
+      INSERT INTO transactions_v7 (id, customer_id, date, total_amount,
+        paid_amount, status, is_owner_consumption, is_cash_sale)
+      SELECT id, customer_id, date,
+        CAST(ROUND(total_amount * 100) AS INTEGER),
+        CAST(ROUND(paid_amount * 100) AS INTEGER),
+        CASE WHEN paid_amount >= total_amount THEN 'PAID' ELSE 'ACTIVE' END,
+        is_owner_consumption, is_cash_sale
+      FROM transactions
+    ''');
+
+    await db.execute('''
+      INSERT INTO transaction_items_v7 (id, transaction_id, item_id,
+        item_name, quantity, price, subtotal)
+      SELECT ti.id, ti.transaction_id,
+        CASE
+          WHEN (SELECT COUNT(*) FROM items_v7 i
+                WHERE LOWER(TRIM(i.name)) = LOWER(TRIM(ti.item_name))) = 1
+          THEN (SELECT i.id FROM items_v7 i
+                WHERE LOWER(TRIM(i.name)) = LOWER(TRIM(ti.item_name)) LIMIT 1)
+          ELSE NULL
+        END,
+        ti.item_name, ti.quantity,
+        CAST(ROUND(ti.price * 100) AS INTEGER),
+        CAST(ROUND(ti.subtotal * 100) AS INTEGER)
+      FROM transaction_items ti
+    ''');
+
+    final spoilageColumns =
+        await db.rawQuery('PRAGMA table_info(spoilage_log)');
+    final hasItemId =
+        spoilageColumns.any((c) => c['name'] == 'item_id');
+    if (hasItemId) {
+      await db.execute('''
+        INSERT INTO spoilage_log_v7 (id, item_id, estimated_value, note, date)
+        SELECT s.id,
+          CASE WHEN EXISTS (SELECT 1 FROM items_v7 i WHERE i.id = s.item_id)
+            THEN s.item_id ELSE NULL END,
+          CAST(ROUND(s.estimated_value * 100) AS INTEGER), s.note, s.date
+        FROM spoilage_log s
+      ''');
+    }
+
+    await db.execute('''
+      UPDATE transactions_v7 SET customer_id = NULL
+      WHERE is_owner_consumption = 1
+    ''');
+    await db.execute('''
+      DELETE FROM customers_v7
+      WHERE LOWER(TRIM(name)) = 'personal use'
+        AND id NOT IN (
+          SELECT customer_id FROM transactions_v7 WHERE customer_id IS NOT NULL
+        )
+    ''');
+
+    await db.execute('DROP TABLE IF EXISTS transaction_items');
+    await db.execute('DROP TABLE IF EXISTS spoilage_log');
+    await db.execute('DROP TABLE IF EXISTS transactions');
+    await db.execute('DROP TABLE IF EXISTS customers');
+    await db.execute('DROP TABLE IF EXISTS items');
+
+    await db.execute('ALTER TABLE items_v7 RENAME TO items');
+    await db.execute('ALTER TABLE customers_v7 RENAME TO customers');
+    await db.execute('ALTER TABLE transactions_v7 RENAME TO transactions');
+    await db.execute(
+        'ALTER TABLE transaction_items_v7 RENAME TO transaction_items');
+    await db.execute('ALTER TABLE spoilage_log_v7 RENAME TO spoilage_log');
+
+    await _createIndexes(db);
+
+    final check = await db.rawQuery('PRAGMA integrity_check');
+    if (check.isEmpty || check.first.values.first != 'ok') {
+      throw Exception('Migration integrity check failed: $check');
+    }
+  }
+
   Future<void> _createIndexes(Database db) async {
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_txn_date ON transactions(date)');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_ti_txn ON transaction_items(transaction_id)');
     await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_ti_dish ON transaction_items(dish_id)');
-    await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_txn_cash_day ON transactions(is_cash_sale, date)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_txn_customer ON transactions(customer_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(LOWER(TRIM(name)))');
   }
 
-
-  /// Adds [name] to [table] only when missing - safe against partially
-  /// upgraded databases and double-running migration blocks.
   Future<void> _ensureColumn(
       Database db, String table, String name, String definition) async {
     final cols = await db.rawQuery('PRAGMA table_info($table)');
@@ -291,7 +481,8 @@ class DatabaseHelper {
     return await db.insert('items', item.toMap());
   }
 
-  Future<List<Item>> getAllItems({String? search, bool newestFirst = true}) async {
+  Future<List<Item>> getAllItems(
+      {String? search, bool newestFirst = true}) async {
     final db = await database;
     String? where;
     List<dynamic>? whereArgs;
@@ -310,24 +501,33 @@ class DatabaseHelper {
 
   Future<int> updateItem(Item item) async {
     final db = await database;
-    return await db.update('items', item.toMap(), where: 'id = ?', whereArgs: [item.id]);
+    return await db.update('items', item.toMap(),
+        where: 'id = ?', whereArgs: [item.id]);
   }
 
   Future<int> deleteItem(int id) async {
     final db = await database;
-    return await db.delete('items', where: 'id = ?', whereArgs: [id]);
+    return await db.transaction((txn) async {
+      await txn.update('spoilage_log', {'item_id': null},
+          where: 'item_id = ?', whereArgs: [id]);
+      return txn.delete('items', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<Item?> getItemByName(String name) async {
     final db = await database;
-    final result = await db.query('items', where: 'name = ?', whereArgs: [name]);
+    final result = await db.rawQuery(
+      'SELECT * FROM items WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+      [name],
+    );
     if (result.isEmpty) return null;
     return Item.fromMap(result.first);
   }
 
   Future<List<String>> getAllItemNames() async {
     final db = await database;
-    final result = await db.rawQuery('SELECT DISTINCT item_name FROM transaction_items ORDER BY item_name ASC');
+    final result = await db.rawQuery(
+        'SELECT DISTINCT item_name FROM transaction_items ORDER BY item_name ASC');
     final names = result.map((r) => r['item_name'] as String).toSet();
     final items = await db.query('items', columns: ['name']);
     names.addAll(items.map((r) => r['name'] as String));
@@ -342,7 +542,8 @@ class DatabaseHelper {
         ? 'LOWER(TRIM(name)) = LOWER(TRIM(?))'
         : 'LOWER(TRIM(name)) = LOWER(TRIM(?)) AND id != ?';
     final args = excludeId == null ? [norm] : [norm, excludeId];
-    final result = await db.rawQuery('SELECT 1 FROM items WHERE $where LIMIT 1', args);
+    final result =
+        await db.rawQuery('SELECT 1 FROM items WHERE $where LIMIT 1', args);
     return result.isNotEmpty;
   }
 
@@ -366,9 +567,6 @@ class DatabaseHelper {
     );
   }
 
-
-  /// Restocking resets the shelf status to well-stocked and stamps when the
-  /// fresh supply arrived (drives "days since bought" hints).
   Future<void> markItemsRestocked(List<int> itemIds) async {
     if (itemIds.isEmpty) return;
     final db = await database;
@@ -411,14 +609,18 @@ class DatabaseHelper {
 
   Future<Customer?> getCustomerById(int id) async {
     final db = await database;
-    final result = await db.query('customers', where: 'id = ?', whereArgs: [id]);
+    final result =
+        await db.query('customers', where: 'id = ?', whereArgs: [id]);
     if (result.isEmpty) return null;
     return Customer.fromMap(result.first);
   }
 
   Future<Customer?> getCustomerByName(String name) async {
     final db = await database;
-    final result = await db.query('customers', where: 'name = ?', whereArgs: [name]);
+    final result = await db.rawQuery(
+      'SELECT * FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+      [name],
+    );
     if (result.isEmpty) return null;
     return Customer.fromMap(result.first);
   }
@@ -436,11 +638,13 @@ class DatabaseHelper {
     return result.map((map) => Transaction.fromMap(map)).toList();
   }
 
-  Future<List<Transaction>> getActiveTransactionsByCustomer(int customerId) async {
+  Future<List<Transaction>> getActiveTransactionsByCustomer(
+      int customerId) async {
     final db = await database;
     final result = await db.query(
       'transactions',
-      where: 'customer_id = ? AND status = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
+      where:
+          'customer_id = ? AND status = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
       whereArgs: [customerId, 'ACTIVE'],
       orderBy: 'date ASC',
     );
@@ -451,20 +655,21 @@ class DatabaseHelper {
     final db = await database;
     final result = await db.query(
       'transactions',
-      where: 'customer_id = ? AND is_owner_consumption = 0 AND is_cash_sale = 0 AND (status = ? OR paid_amount >= total_amount)',
-      whereArgs: [customerId, 'PAID'],
+      where:
+          'customer_id = ? AND is_owner_consumption = 0 AND is_cash_sale = 0 AND paid_amount >= total_amount',
+      whereArgs: [customerId],
       orderBy: 'date DESC',
     );
     return result.map((map) => Transaction.fromMap(map)).toList();
   }
 
-  Future<double> getCustomerOutstandingBalance(int customerId) async {
+  Future<int> getCustomerOutstandingBalance(int customerId) async {
     final db = await database;
     final result = await db.rawQuery(
       'SELECT COALESCE(SUM(total_amount - paid_amount), 0) as balance FROM transactions WHERE customer_id = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0',
       [customerId],
     );
-    return (result.first['balance'] as num).toDouble();
+    return (result.first['balance'] as num).toInt();
   }
 
   Future<List<Map<String, dynamic>>> getCustomersWithBalances() async {
@@ -474,7 +679,7 @@ class DatabaseHelper {
         COALESCE(SUM(t.total_amount - t.paid_amount), 0) as balance
       FROM customers c
       INNER JOIN transactions t ON t.customer_id = c.id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0
+      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0
       GROUP BY c.id
       HAVING balance > 0
     ''');
@@ -482,9 +687,10 @@ class DatabaseHelper {
 
   Future<Set<int>> getAllOverdueCustomerIds() async {
     final db = await database;
-    final cutoff = DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
+    final cutoff =
+        DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
     final result = await db.rawQuery(
-      'SELECT DISTINCT customer_id FROM transactions WHERE paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?',
+      'SELECT DISTINCT customer_id FROM transactions WHERE customer_id IS NOT NULL AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?',
       [cutoff],
     );
     return result.map((row) => row['customer_id'] as int).toSet();
@@ -492,7 +698,8 @@ class DatabaseHelper {
 
   Future<bool> hasOverdueTransactions(int customerId) async {
     final db = await database;
-    final cutoff = DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
+    final cutoff =
+        DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
     final result = await db.rawQuery(
       'SELECT COUNT(*) as cnt FROM transactions WHERE customer_id = ? AND paid_amount < total_amount AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?',
       [customerId, cutoff],
@@ -514,14 +721,15 @@ class DatabaseHelper {
     ''');
   }
 
-  Future<int> updateTransactionPayment(int transactionId, double newPaidAmount) async {
+  Future<int> updateTransactionPayment(int transactionId, int amount) async {
     final db = await database;
-    final txn = await db.query('transactions', where: 'id = ?', whereArgs: [transactionId]);
+    final txn =
+        await db.query('transactions', where: 'id = ?', whereArgs: [transactionId]);
     if (txn.isEmpty) return 0;
-    final total = (txn.first['total_amount'] as num).toDouble();
-    final currentPaid = (txn.first['paid_amount'] as num).toDouble();
-    final updatedPaid = clampMoney(currentPaid + newPaidAmount, 0, double.infinity);
-    final status = moneyEquals(updatedPaid, total) || updatedPaid >= total ? 'PAID' : 'ACTIVE';
+    final total = (txn.first['total_amount'] as num).toInt();
+    final currentPaid = (txn.first['paid_amount'] as num).toInt();
+    final updatedPaid = clampMinor(currentPaid + amount, 0, total);
+    final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
     return await db.update(
       'transactions',
       {'paid_amount': updatedPaid, 'status': status},
@@ -530,9 +738,11 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer({int? customerId}) async {
+  Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer(
+      {int? customerId}) async {
     final db = await database;
-    String where = 'WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0';
+    String where =
+        'WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0';
     final args = <dynamic>[];
     if (customerId != null) {
       where += ' AND t.customer_id = ?';
@@ -547,7 +757,8 @@ class DatabaseHelper {
     ''', args);
   }
 
-  Future<List<TransactionItem>> getItemsForTransactions(List<int> transactionIds) async {
+  Future<List<TransactionItem>> getItemsForTransactions(
+      List<int> transactionIds) async {
     if (transactionIds.isEmpty) return [];
     final db = await database;
     final placeholders = List.filled(transactionIds.length, '?').join(',');
@@ -558,20 +769,52 @@ class DatabaseHelper {
     return result.map((map) => TransactionItem.fromMap(map)).toList();
   }
 
-  Future<int> deleteTransaction(int transactionId) async {
+  Future<Map<String, dynamic>?> snapshotTransaction(int transactionId) async {
     final db = await database;
-    await db.delete('transaction_items', where: 'transaction_id = ?', whereArgs: [transactionId]);
-    return await db.delete('transactions', where: 'id = ?', whereArgs: [transactionId]);
+    final txn = await db.query('transactions',
+        where: 'id = ?', whereArgs: [transactionId]);
+    if (txn.isEmpty) return null;
+    final items = await db.query('transaction_items',
+        where: 'transaction_id = ?', whereArgs: [transactionId]);
+    return {'transaction': txn.first, 'items': items};
   }
 
-  Future<int> reverseTransactionPayment(int transactionId, double amount) async {
+  Future<void> restoreTransactionSnapshot(Map<String, dynamic> snapshot) async {
     final db = await database;
-    final txn = await db.query('transactions', where: 'id = ?', whereArgs: [transactionId]);
+    final transaction =
+        Map<String, dynamic>.from(snapshot['transaction'] as Map);
+    final items = (snapshot['items'] as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    await db.transaction((txn) async {
+      await txn.insert('transactions', transaction,
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      for (final item in items) {
+        await txn.insert('transaction_items', item,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<int> deleteTransaction(int transactionId) async {
+    final db = await database;
+    return await db.transaction((txn) async {
+      await txn.delete('transaction_items',
+          where: 'transaction_id = ?', whereArgs: [transactionId]);
+      return txn.delete('transactions',
+          where: 'id = ?', whereArgs: [transactionId]);
+    });
+  }
+
+  Future<int> reverseTransactionPayment(int transactionId, int amount) async {
+    final db = await database;
+    final txn =
+        await db.query('transactions', where: 'id = ?', whereArgs: [transactionId]);
     if (txn.isEmpty) return 0;
-    final total = (txn.first['total_amount'] as num).toDouble();
-    final currentPaid = (txn.first['paid_amount'] as num).toDouble();
-    final updatedPaid = clampMoney(currentPaid - amount, 0, total);
-    final status = moneyEquals(updatedPaid, total) || updatedPaid >= total ? 'PAID' : 'ACTIVE';
+    final total = (txn.first['total_amount'] as num).toInt();
+    final currentPaid = (txn.first['paid_amount'] as num).toInt();
+    final updatedPaid = clampMinor(currentPaid - amount, 0, total);
+    final status = updatedPaid >= total ? 'PAID' : 'ACTIVE';
     return await db.update(
       'transactions',
       {'paid_amount': updatedPaid, 'status': status},
@@ -591,7 +834,7 @@ class DatabaseHelper {
         MAX(t.date) as latest_date
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND is_cash_sale = 0
+      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0
       GROUP BY c.id
       ORDER BY MIN(t.date) ASC
     ''');
@@ -600,23 +843,18 @@ class DatabaseHelper {
   // ─── Transactions with items (atomic) ───────────────────────────────
 
   Future<int> insertTransactionWithItems(
-    int customerId,
+    int? customerId,
     List<Map<String, dynamic>> items, {
     bool isOwnerConsumption = false,
     bool isCashSale = false,
-    bool deductedIngredients = false,
-    int? dishId,
   }) async {
     final db = await database;
     final date = DateTime.now().toIso8601String();
-    double totalAmount = 0;
+    var totalAmount = 0;
     for (final item in items) {
-      totalAmount += (item['subtotal'] as num).toDouble();
+      totalAmount += (item['subtotal'] as num).toInt();
     }
-    totalAmount = roundMoney(totalAmount);
-    // A cash sale is settled the moment it happens - it must never surface
-    // as debt anywhere, even if a future query forgets the flag.
-    final paid = isCashSale ? totalAmount : 0.0;
+    final paid = isCashSale ? totalAmount : 0;
     return await db.transaction<int>((txn) async {
       final txnId = await txn.insert('transactions', {
         'customer_id': customerId,
@@ -626,22 +864,28 @@ class DatabaseHelper {
         'status': isCashSale ? 'PAID' : 'ACTIVE',
         'is_owner_consumption': isOwnerConsumption ? 1 : 0,
         'is_cash_sale': isCashSale ? 1 : 0,
-        'deducted_ingredients': deductedIngredients ? 1 : 0,
-        if (dishId != null) 'dish_id': dishId,
       });
       for (final item in items) {
+        final itemId = await _resolveItemId(txn, item['item_name'] as String);
         await txn.insert('transaction_items', {
           'transaction_id': txnId,
+          'item_id': itemId,
           'item_name': item['item_name'],
           'quantity': item['quantity'],
-          'price': item['price'],
-          'subtotal': roundMoney((item['subtotal'] as num).toDouble()),
-          if (item['dish_id'] != null) 'dish_id': item['dish_id'],
-          'unit_capital': (item['unit_capital'] as num?)?.toDouble() ?? 0,
+          'price': (item['price'] as num).toInt(),
+          'subtotal': (item['subtotal'] as num).toInt(),
         });
       }
       return txnId;
     });
+  }
+
+  Future<int?> _resolveItemId(DatabaseExecutor txn, String name) async {
+    final rows = await txn.rawQuery(
+      'SELECT id FROM items WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
+      [name],
+    );
+    return rows.length == 1 ? rows.first['id'] as int : null;
   }
 
   // ─── Spoilage ───────────────────────────────────────────────────────
@@ -663,19 +907,16 @@ class DatabaseHelper {
     return result.map(SpoilageEntry.fromMap).toList();
   }
 
-  Future<double> spoilageTotalSince(String isoSince) async {
+  Future<int> spoilageTotalSince(String isoSince) async {
     final db = await database;
     final result = await db.rawQuery(
       'SELECT COALESCE(SUM(estimated_value), 0) as total FROM spoilage_log WHERE date >= ?',
       [isoSince],
     );
-    return (result.first['total'] as num).toDouble();
+    return (result.first['total'] as num).toInt();
   }
 
-  /// Marks every unpaid credit receipt of [customerId] as fully paid.
-  /// Cash tap-sales and owner-use rows are structurally excluded.
-  /// Returns the number of receipts settled and the amount collected.
-  Future<Map<String, double>> markAllCustomerReceiptsPaid(int customerId) async {
+  Future<Map<String, int>> markAllCustomerReceiptsPaid(int customerId) async {
     final db = await database;
     return await db.transaction((txn) async {
       final rows = await txn.rawQuery('''
@@ -684,24 +925,22 @@ class DatabaseHelper {
         WHERE customer_id = ? AND paid_amount < total_amount
           AND is_owner_consumption = 0 AND is_cash_sale = 0
       ''', [customerId]);
-      double collected = 0;
+      var collected = 0;
       for (final r in rows) {
-        final rem = (r['remaining'] as num).toDouble();
-        final total = (r['total_amount'] as num).toDouble();
+        final rem = (r['remaining'] as num).toInt();
+        final total = (r['total_amount'] as num).toInt();
         collected += rem;
         await txn.update(
           'transactions',
-          {'paid_amount': roundMoney(total), 'status': 'PAID'},
+          {'paid_amount': total, 'status': 'PAID'},
           where: 'id = ?',
           whereArgs: [r['id']],
         );
       }
-      return {'settled': rows.length.toDouble(), 'collected': collected};
+      return {'settled': rows.length, 'collected': collected};
     });
   }
 
-  /// Customers ordered by most recent transaction first; never-used ones
-  /// trail alphabetically. Powers Add-Credit suggestions.
   Future<List<Customer>> getCustomersByRecent() async {
     final db = await database;
     final result = await db.rawQuery('''
@@ -712,21 +951,24 @@ class DatabaseHelper {
       GROUP BY c.id
       ORDER BY last_txn IS NULL, last_txn DESC, c.name COLLATE NOCASE ASC
     ''');
-    return result.map((row) => Customer(
-          id: row['id'] as int,
-          name: row['name'] as String,
-          createdAt: row['created_at'] as String,
-        )).toList();
+    return result
+        .map((row) => Customer(
+              id: row['id'] as int,
+              name: row['name'] as String,
+              createdAt: row['created_at'] as String,
+            ))
+        .toList();
   }
 
   // ─── Owner Consumption & Sales Intelligence ─────────────────────────
 
-  Future<List<Map<String, dynamic>>> getOwnerConsumptionLog({int limit = 200}) async {
+  Future<List<Map<String, dynamic>>> getOwnerConsumptionLog(
+      {int limit = 200}) async {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT t.*, c.name as customer_name
       FROM transactions t
-      INNER JOIN customers c ON c.id = t.customer_id
+      LEFT JOIN customers c ON c.id = t.customer_id
       WHERE t.is_owner_consumption = 1
       ORDER BY t.date DESC
       LIMIT ?
@@ -740,7 +982,9 @@ class DatabaseHelper {
     );
     final namesByTxn = <int, List<String>>{};
     for (final row in itemRows) {
-      namesByTxn.putIfAbsent(row['transaction_id'] as int, () => []).add(row['item_name'] as String);
+      namesByTxn
+          .putIfAbsent(row['transaction_id'] as int, () => [])
+          .add(row['item_name'] as String);
     }
     return [
       for (final r in rows)
@@ -751,9 +995,6 @@ class DatabaseHelper {
     ];
   }
 
-  /// Normalized-name sale counts since [isoSince], excluding owner use.
-  /// Names are matched via trim+lowercase because transaction_items stores
-  /// denormalized display names.
   Future<Map<String, int>> getItemSaleCountsSince(String isoSince) async {
     final db = await database;
     final result = await db.rawQuery('''
@@ -769,26 +1010,28 @@ class DatabaseHelper {
     };
   }
 
-  Future<Map<String, double>> getSalesSummarySince(String isoSince) async {
+  Future<Map<String, int>> getSalesSummarySince(String isoSince) async {
     final db = await database;
     final result = await db.rawQuery('''
       SELECT
         COALESCE(SUM(CASE WHEN is_owner_consumption = 0 THEN total_amount ELSE 0 END), 0) AS sales,
         COALESCE(SUM(CASE WHEN is_owner_consumption = 0 THEN paid_amount ELSE 0 END), 0) AS collected,
-        COALESCE(SUM(CASE WHEN is_cash_sale = 1 THEN total_amount ELSE 0 END), 0) AS cash_sales,
+        COALESCE(SUM(CASE WHEN is_cash_sale = 1 AND is_owner_consumption = 0 THEN total_amount ELSE 0 END), 0) AS cash_sales,
         COALESCE(SUM(CASE WHEN is_owner_consumption = 1 THEN total_amount ELSE 0 END), 0) AS owner_use
       FROM transactions
       WHERE date >= ?
     ''', [isoSince]);
     final row = result.first;
     return {
-      'sales': (row['sales'] as num).toDouble(),
-      'collected': (row['collected'] as num).toDouble(),
-      'owner_use': (row['owner_use'] as num).toDouble(),
+      'sales': (row['sales'] as num).toInt(),
+      'collected': (row['collected'] as num).toInt(),
+      'cash_sales': (row['cash_sales'] as num).toInt(),
+      'owner_use': (row['owner_use'] as num).toInt(),
     };
   }
 
-  Future<List<Map<String, dynamic>>> getTopItemsSince(String isoSince, {int limit = 5}) async {
+  Future<List<Map<String, dynamic>>> getTopItemsSince(String isoSince,
+      {int limit = 5}) async {
     final db = await database;
     return await db.rawQuery('''
       SELECT LOWER(TRIM(ti.item_name)) AS norm_name,
@@ -815,94 +1058,120 @@ class DatabaseHelper {
 
   // ─── Backup & Restore ───────────────────────────────────────────────
 
+  static const _backupTables = [
+    'items',
+    'customers',
+    'transactions',
+    'transaction_items',
+    'spoilage_log',
+  ];
+
   Future<Map<String, dynamic>?> exportBackup() async {
     final db = await database;
-    final items = await db.query('items');
-    final customers = await db.query('customers');
-    final transactions = await db.query('transactions');
-    final transactionItems = await db.query('transaction_items');
-    final dishes = await db.query('dishes');
-    final dishIngredients = await db.query('dish_ingredients');
-    final spoilageLog = await db.query('spoilage_log');
-    final dishLeftovers = await db.query('dish_leftovers');
-    return {
+    final payload = <String, dynamic>{};
+    final counts = <String, int>{};
+    for (final table in _backupTables) {
+      final rows = await db.query(table);
+      payload[table] = rows;
+      counts[table] = rows.length;
+    }
+    final data = <String, dynamic>{
       'app': 'TalaKo',
-      'version': 6,
+      'version': schemaVersion,
       'exported_at': DateTime.now().toIso8601String(),
-      'items': items,
-      'customers': customers,
-      'transactions': transactions,
-      'transaction_items': transactionItems,
-      'dishes': dishes,
-      'dish_ingredients': dishIngredients,
-      'spoilage_log': spoilageLog,
-      'dish_leftovers': dishLeftovers,
+      'record_counts': counts,
+      ...payload,
     };
+    data['checksum'] = _checksumOf(data);
+    return data;
   }
 
-  /// Accepts current TalaKo backups plus legacy ones from the pre-rename
-  /// "Sari" v1 era (flat `credits` table instead of transactions).
+  String _checksumOf(Map<String, dynamic> data) {
+    final canonical = jsonEncode({
+      'app': data['app'],
+      'version': data['version'],
+      'record_counts': data['record_counts'],
+      for (final table in _backupTables) table: data[table] ?? const [],
+    });
+    var hash = 0x811c9dc5;
+    for (final code in canonical.codeUnits) {
+      hash ^= code;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
   Future<void> importBackup(Map<String, dynamic> data) async {
     final appName = data['app']?.toString() ?? '';
     if (appName != 'TalaKo' && appName != 'Sari') {
       throw Exception('Not a valid TalaKo backup file');
     }
+    final version = (data['version'] as num?)?.toInt() ?? 1;
+    if (version > schemaVersion) {
+      throw Exception('Backup is from a newer version of TalaKo');
+    }
     if (!data.containsKey('transactions') &&
         !data.containsKey('credits') &&
         !data.containsKey('transaction_items')) {
-      // Guard against restoring arbitrary JSON that would silently wipe
-      // the live ledger.
       throw Exception('Backup contains no ledger data');
     }
+
+    final counts = data['record_counts'];
+    if (counts is Map) {
+      for (final table in _backupTables) {
+        if (counts.containsKey(table) && data[table] is List) {
+          if ((data[table] as List).length != (counts[table] as num).toInt()) {
+            throw Exception('Backup record count mismatch for $table');
+          }
+        }
+      }
+    }
+    if (data['checksum'] is String && counts is Map) {
+      final expected = data['checksum'] as String;
+      if (_checksumOf(data) != expected) {
+        throw Exception('Backup checksum mismatch');
+      }
+    }
+
+    final legacyUnits = version < schemaVersion;
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete('dish_leftovers');
-      await txn.delete('spoilage_log');
       await txn.delete('dish_ingredients');
       await txn.delete('dishes');
+      await txn.delete('spoilage_log');
       await txn.delete('transaction_items');
       await txn.delete('transactions');
       await txn.delete('customers');
       await txn.delete('items');
-      for (final item in (data['items'] as List)) {
-        await txn.insert('items', item as Map<String, dynamic>);
+
+      for (final raw in (data['items'] as List? ?? const [])) {
+        await txn.insert('items', _itemRow(raw, legacyUnits));
       }
-      for (final customer in (data['customers'] as List)) {
-        await txn.insert('customers', customer as Map<String, dynamic>);
+      for (final raw in (data['customers'] as List? ?? const [])) {
+        await txn.insert('customers', _customerRow(raw));
       }
-      if (data.containsKey('transactions')) {
-        for (final txnData in (data['transactions'] as List)) {
-          await txn.insert('transactions', txnData as Map<String, dynamic>);
-        }
+      for (final raw in (data['transactions'] as List? ?? const [])) {
+        await txn.insert('transactions', _transactionRow(raw, legacyUnits));
       }
-      if (data.containsKey('transaction_items')) {
-        for (final item in (data['transaction_items'] as List)) {
-          await txn.insert('transaction_items', item as Map<String, dynamic>);
-        }
+      for (final raw in (data['transaction_items'] as List? ?? const [])) {
+        await txn.insert(
+            'transaction_items', _transactionItemRow(raw, legacyUnits));
       }
-      // Newer-format sections are optional so v2 backups still restore.
-      if (data.containsKey('dishes')) {
-        for (final dish in (data['dishes'] as List)) {
-          await txn.insert('dishes', dish as Map<String, dynamic>);
-        }
+      for (final raw in (data['spoilage_log'] as List? ?? const [])) {
+        await txn.insert('spoilage_log', _spoilageRow(raw, legacyUnits));
       }
-      if (data.containsKey('dish_ingredients')) {
-        for (final link in (data['dish_ingredients'] as List)) {
-          await txn.insert('dish_ingredients', link as Map<String, dynamic>);
-        }
-      }
-      if (data.containsKey('spoilage_log')) {
-        for (final entry in (data['spoilage_log'] as List)) {
-          await txn.insert('spoilage_log', entry as Map<String, dynamic>);
-        }
-      }
-      // Legacy "Sari" v1 backups: flat credits table becomes one
-      // transaction + line per credit, preserving paid amounts.
-      if (!data.containsKey('transactions') && data.containsKey('credits')) {
-        for (final c in (data['credits'] as List)) {
-          final credit = c as Map<String, dynamic>;
-          final total = (credit['total'] as num).toDouble();
-          final paid = (credit['paid_amount'] as num).toDouble();
+
+      if (!data.containsKey('transactions') &&
+          data.containsKey('credits')) {
+        for (final raw in (data['credits'] as List)) {
+          final credit = raw as Map;
+          final total = legacyUnits
+              ? majorToMinor(credit['total'] as num)
+              : (credit['total'] as num).toInt();
+          final paid = legacyUnits
+              ? majorToMinor(credit['paid_amount'] as num)
+              : (credit['paid_amount'] as num).toInt();
           final txnId = await txn.insert('transactions', {
             'customer_id': credit['customer_id'],
             'date': credit['timestamp'],
@@ -914,16 +1183,154 @@ class DatabaseHelper {
             'transaction_id': txnId,
             'item_name': credit['item_name'],
             'quantity': credit['quantity'],
-            'price': credit['price_per_unit'],
+            'price': legacyUnits
+                ? majorToMinor(credit['price_per_unit'] as num)
+                : (credit['price_per_unit'] as num).toInt(),
             'subtotal': total,
           });
         }
       }
-      if (data.containsKey('dish_leftovers')) {
-        for (final entry in (data['dish_leftovers'] as List)) {
-          await txn.insert('dish_leftovers', entry as Map<String, dynamic>);
+
+      if (data.containsKey('dishes')) {
+        for (final dish in (data['dishes'] as List)) {
+          await txn.insert('dishes', Map<String, dynamic>.from(dish as Map));
         }
       }
+      if (data.containsKey('dish_ingredients')) {
+        for (final link in (data['dish_ingredients'] as List)) {
+          await txn.insert(
+              'dish_ingredients', Map<String, dynamic>.from(link as Map));
+        }
+      }
+      if (data.containsKey('dish_leftovers')) {
+        for (final entry in (data['dish_leftovers'] as List)) {
+          await txn.insert(
+              'dish_leftovers', Map<String, dynamic>.from(entry as Map));
+        }
+      }
+
+      await txn.rawUpdate('''
+        UPDATE transactions SET customer_id = NULL
+        WHERE is_owner_consumption = 1
+      ''');
+      await txn.rawUpdate('''
+        UPDATE transactions SET status =
+          CASE WHEN paid_amount >= total_amount THEN 'PAID' ELSE 'ACTIVE' END
+      ''');
+      await txn.rawDelete('''
+        DELETE FROM customers
+        WHERE LOWER(TRIM(name)) = 'personal use'
+          AND id NOT IN (
+            SELECT customer_id FROM transactions WHERE customer_id IS NOT NULL
+          )
+      ''');
     });
+  }
+
+  Map<String, dynamic> _itemRow(dynamic raw, bool legacyUnits) {
+    final map = Map<String, dynamic>.from(raw as Map);
+    final price = (map['price'] as num?) ?? 0;
+    return {
+      if (map['id'] != null) 'id': map['id'],
+      'name': map['name']?.toString() ?? '',
+      'price': legacyUnits ? majorToMinor(price) : price.toInt(),
+      'created_at': map['created_at']?.toString() ??
+          DateTime.now().toIso8601String(),
+      'usage_type': map['usage_type']?.toString() ?? 'retail_only',
+      'stock_status': map['stock_status']?.toString() ?? 'well_stocked',
+      'notes': map['notes'],
+      'last_status_updated': map['last_status_updated'],
+      'last_restocked': map['last_restocked'],
+    };
+  }
+
+  Map<String, dynamic> _customerRow(dynamic raw) {
+    final map = Map<String, dynamic>.from(raw as Map);
+    return {
+      if (map['id'] != null) 'id': map['id'],
+      'name': map['name']?.toString() ?? '',
+      'created_at': map['created_at']?.toString() ??
+          DateTime.now().toIso8601String(),
+    };
+  }
+
+  Map<String, dynamic> _transactionRow(dynamic raw, bool legacyUnits) {
+    final map = Map<String, dynamic>.from(raw as Map);
+    final total = (map['total_amount'] as num?) ?? 0;
+    final paid = (map['paid_amount'] as num?) ?? 0;
+    final totalMinor = legacyUnits ? majorToMinor(total) : total.toInt();
+    final paidMinor = legacyUnits ? majorToMinor(paid) : paid.toInt();
+    return {
+      if (map['id'] != null) 'id': map['id'],
+      'customer_id': map['customer_id'],
+      'date': map['date']?.toString() ?? DateTime.now().toIso8601String(),
+      'total_amount': totalMinor,
+      'paid_amount': paidMinor,
+      'status': paidMinor >= totalMinor ? 'PAID' : 'ACTIVE',
+      'is_owner_consumption': (map['is_owner_consumption'] as num? ?? 0).toInt(),
+      'is_cash_sale': (map['is_cash_sale'] as num? ?? 0).toInt(),
+    };
+  }
+
+  Map<String, dynamic> _transactionItemRow(dynamic raw, bool legacyUnits) {
+    final map = Map<String, dynamic>.from(raw as Map);
+    final price = (map['price'] as num?) ?? 0;
+    final subtotal = (map['subtotal'] as num?) ?? 0;
+    return {
+      if (map['id'] != null) 'id': map['id'],
+      'transaction_id': map['transaction_id'],
+      'item_id': map['item_id'],
+      'item_name': map['item_name']?.toString() ?? '',
+      'quantity': (map['quantity'] as num? ?? 1).toInt(),
+      'price': legacyUnits ? majorToMinor(price) : price.toInt(),
+      'subtotal': legacyUnits ? majorToMinor(subtotal) : subtotal.toInt(),
+    };
+  }
+
+  Map<String, dynamic> _spoilageRow(dynamic raw, bool legacyUnits) {
+    final map = Map<String, dynamic>.from(raw as Map);
+    final value = (map['estimated_value'] as num?) ?? 0;
+    return {
+      if (map['id'] != null) 'id': map['id'],
+      'item_id': map['item_id'],
+      'estimated_value': legacyUnits ? majorToMinor(value) : value.toInt(),
+      'note': map['note'],
+      'date': map['date']?.toString() ?? DateTime.now().toIso8601String(),
+    };
+  }
+
+  /// Validates an incoming raw database without touching the live one.
+  Future<void> validateRawDatabase(String sourcePath) async {
+    final src = File(sourcePath);
+    if (!await src.exists()) throw Exception('Database file not found');
+    await _guardDatabaseFile(sourcePath);
+    Database? incoming;
+    try {
+      incoming = await openDatabase(sourcePath,
+          readOnly: true, singleInstance: false);
+      final version = await incoming.getVersion();
+      if (version > schemaVersion) {
+        throw Exception('Database is from a newer version of TalaKo');
+      }
+    } finally {
+      await incoming?.close();
+    }
+  }
+
+  /// Replaces the live database with [sourcePath] after validation.
+  /// The original stays in place until validation succeeds.
+  Future<void> restoreRawDatabase(String sourcePath) async {
+    await validateRawDatabase(sourcePath);
+    final destination = await getDbFilePath();
+    if (File(sourcePath).absolute.path == File(destination).absolute.path) {
+      await close();
+      return;
+    }
+    await close();
+    for (final suffix in ['-wal', '-shm']) {
+      final sidecar = File('$destination$suffix');
+      if (await sidecar.exists()) await sidecar.delete();
+    }
+    await File(sourcePath).copy(destination);
   }
 }

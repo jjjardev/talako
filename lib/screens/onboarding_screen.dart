@@ -1,5 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../database/database_helper.dart';
+import '../utils/app_logger.dart';
+import '../utils/backup_service.dart';
 import 'main_shell.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -15,40 +23,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   static const _pages = [
     _PageData(
-      icon: Icons.store,
-      title: 'Welcome to TalaKo',
+      icon: Icons.payments_outlined,
+      title: 'Money',
       body:
-          'A simple, offline app to track your store\'s credit sales.\n\nNo internet required.',
-    ),
-    _PageData(
-      icon: Icons.receipt_long,
-      title: 'Credit Book',
-      body:
-          'All active debts sorted oldest-first. Each tile shows the item breakdown (name, qty x price, subtotal).\n\nRed = overdue (14+ days), orange = 7+ days.\n\nSearch by name or toggle group mode to see one tile per customer.',
-    ),
-    _PageData(
-      icon: Icons.add_circle_outline,
-      title: 'Recording Credits',
-      body:
-          'Tap + to record a credit. New items appear at the top. Autocomplete for customer and item names.\n\nEach credit gets its own receipt — separate dates stay separate.',
+          'Track credit sales and payments in one place. Partial payments are supported.\n\nAll amounts are stored to the centavo.',
     ),
     _PageData(
       icon: Icons.inventory_2_outlined,
-      title: 'Stock Watch',
+      title: 'Shelf',
       body:
-          'Glance at your shelf and tap items to mark them Well Stocked, Running Low, Out of Stock or Cold.\n\nNo counting - a 30-second scan is enough.',
+          'Tap items to mark them Well Stocked, Running Low, or Out of Stock.\n\nNo counting - a 30-second scan is enough.',
     ),
     _PageData(
       icon: Icons.shopping_basket_outlined,
-      title: 'Shopping List',
+      title: 'Shopping',
       body:
-          'Mark items Running Low or Out of Stock and the Shopping List builds itself.\n\nShare it before heading to the market.',
+          'Mark items Running Low or Out and the Shopping List builds itself.\n\nShare it before heading to the market.',
     ),
     _PageData(
-      icon: Icons.settings,
-      title: 'Payments & Undo',
+      icon: Icons.backup_outlined,
+      title: 'Backup',
       body:
-          'Tap Pay on any tile, enter the amount on the numpad. Partial payments supported.\n\nMistake? Tap Undo on the snackbar immediately after adding a credit or recording a payment.',
+          'Your data stays on this device. Export a JSON or raw database backup regularly.\n\nRestore it here on a new phone.',
     ),
   ];
 
@@ -62,7 +58,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('onboarding_version', 3);
+    await prefs.setInt('onboarding_version', 4);
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -79,6 +75,56 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    final path = (result == null || result.files.isEmpty)
+        ? null
+        : result.files.first.path;
+    if (path == null || !mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore a backup?'),
+        content: const Text(
+            'This replaces the empty database with the selected backup.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      if (path.toLowerCase().endsWith('.json')) {
+        final jsonString = await File(path).readAsString();
+        final data = jsonDecode(jsonString) as Map<String, dynamic>;
+        await DatabaseHelper.instance.importBackup(data);
+      } else if (path.toLowerCase().endsWith('.db')) {
+        await DatabaseHelper.instance.restoreRawDatabase(path);
+        await DatabaseHelper.instance.database;
+      } else {
+        throw Exception('Choose a TalaKo .json or .db backup');
+      }
+      await BackupService.markBackedUp();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Backup restored successfully')));
+      await _completeOnboarding();
+    } catch (e, s) {
+      logError('onboarding-restore', e, s);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Restore failed: $e')));
+      }
     }
   }
 
@@ -108,7 +154,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(page.icon, size: 96, color: theme.colorScheme.primary),
+                        Icon(page.icon,
+                            size: 96, color: theme.colorScheme.primary),
                         const SizedBox(height: 32),
                         Text(
                           page.title,
@@ -119,9 +166,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         const SizedBox(height: 16),
                         Text(
                           page.body,
-                          style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+                          style: theme.textTheme.bodyLarge
+                              ?.copyWith(height: 1.5),
                           textAlign: TextAlign.center,
                         ),
+                        if (i == 0 || i == _pages.length - 1) ...[
+                          const SizedBox(height: 24),
+                          OutlinedButton.icon(
+                            onPressed: _restoreBackup,
+                            icon: const Icon(Icons.restore, size: 18),
+                            label: const Text('Restore a backup'),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -133,9 +189,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: List.generate(_pages.length, _buildDot),
-                  ),
+                  Row(children: List.generate(_pages.length, _buildDot)),
                   FilledButton(
                     onPressed: _onNext,
                     child: Text(_isLastPage ? 'Get Started' : 'Next'),

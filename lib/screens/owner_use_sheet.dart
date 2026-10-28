@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/inventory_provider.dart';
 import '../utils/currency_format.dart';
 import '../utils/snackbars.dart';
+import '../utils/money.dart';
 
 /// Quick-action sheet for logging personal consumption ("panty" problem).
 class OwnerUseSheet extends StatefulWidget {
@@ -29,7 +30,7 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
           const SnackBar(content: Text('Pick an item')));
       return;
     }
-    final value = double.tryParse(_value.text.trim()) ?? 0;
+    final value = parseMajorToMinor(_value.text.trim()) ?? 0;
     if (value <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Enter the estimated value')));
@@ -82,7 +83,7 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
               const Icon(Icons.takeout_dining_outlined),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('Owner Took Stock',
+                child: Text('Personal use',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               ),
               IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
@@ -108,8 +109,7 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
                 _selectedItemId = id;
                 final item = inv.itemById(id!);
                 if (item != null && _value.text.isEmpty) {
-                  final p = item.price;
-                  _value.text = p % 1 == 0 ? p.toStringAsFixed(0) : p.toStringAsFixed(2);
+                  _value.text = formatMinorPlain(item.price);
                 }
               });
             },

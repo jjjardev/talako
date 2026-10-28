@@ -8,7 +8,7 @@ import '../utils/money.dart';
 class PaySheet extends StatefulWidget {
   final int transactionId;
   final String customerName;
-  final double remainingBalance;
+  final int remainingBalance;
 
   const PaySheet({
     super.key,
@@ -25,9 +25,9 @@ class _PaySheetState extends State<PaySheet> {
   String _input = '';
   bool _submitting = false;
 
-  double get _displayAmount => double.tryParse(_input) ?? 0;
+  int get _displayAmount => parseMajorToMinor(_input) ?? 0;
 
-  double get _newRemaining {
+  int get _newRemaining {
     final paid = _displayAmount;
     return widget.remainingBalance - paid;
   }
@@ -115,9 +115,7 @@ class _PaySheetState extends State<PaySheet> {
                   backgroundColor: Colors.green.shade600,
                   labelStyle: const TextStyle(color: Colors.white),
                   onPressed: () => setState(() {
-                    _input = widget.remainingBalance % 1 == 0
-                        ? widget.remainingBalance.toStringAsFixed(0)
-                        : widget.remainingBalance.toStringAsFixed(2);
+                    _input = formatMinorPlain(widget.remainingBalance);
                   }),
                 ),
               ),
@@ -256,8 +254,7 @@ class _PaySheetState extends State<PaySheet> {
     if (_isFullPayment) {
       await provider.processPayment(widget.transactionId, widget.remainingBalance);
     } else {
-      final newPaid = _displayAmount;
-      await provider.processPayment(widget.transactionId, newPaid);
+      await provider.processPayment(widget.transactionId, _displayAmount);
     }
     if (mounted) {
       Navigator.pop(context, _isFullPayment ? widget.remainingBalance : _displayAmount);

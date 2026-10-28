@@ -5,6 +5,7 @@ import '../providers/transactions_provider.dart';
 import '../utils/currency_format.dart';
 import '../utils/date_format.dart';
 import '../utils/pay_flow.dart';
+import '../utils/snackbars.dart';
 
 class CustomerDetailScreen extends StatefulWidget {
   final int customerId;
@@ -71,8 +72,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         title: const Text('Delete this receipt?'),
         content: Text(
             '${t.customerName}: ${t.items.map((i) => i.itemName).join(", ")} - '
-            'remaining ${t.remaining.toStringAsFixed(0)} pesos will be erased. '
-            'This cannot be undone.'),
+            'remaining ${formatCurrency(t.remaining)} will be erased.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
@@ -83,8 +83,25 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       ),
     );
     if (confirmed != true || !mounted) return false;
-    await context.read<TransactionsProvider>().deleteTransaction(t.id);
+    final provider = context.read<TransactionsProvider>();
+    final snapshot = await provider.deleteTransactionWithSnapshot(t.id);
+    if (!mounted) return false;
     await _load();
+    if (snapshot != null && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      showAutoDismissSnackBar(
+        messenger,
+        message: 'Receipt deleted',
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            messenger.clearSnackBars();
+            await provider.restoreTransactionSnapshot(snapshot);
+            if (mounted) await _load();
+          },
+        ),
+      );
+    }
     return true;
   }
 
@@ -101,8 +118,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     });
   }
 
-  double get _totalOutstanding {
-    double sum = 0;
+  int get _totalOutstanding {
+    var sum = 0;
     for (final t in _transactions) {
       sum += t.remaining;
     }

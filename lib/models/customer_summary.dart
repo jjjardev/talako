@@ -2,7 +2,7 @@ import 'customer.dart';
 
 class CustomerSummary {
   final Customer customer;
-  final double balance;
+  final int balance;
   final bool hasOverdue;
 
   CustomerSummary({

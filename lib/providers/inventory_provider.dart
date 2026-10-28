@@ -159,7 +159,7 @@ class InventoryProvider extends ChangeNotifier {
 
   Future<String?> addItem({
     required String name,
-    required double price,
+    required int price,
     required UsageType usageType,
     StockStatus stockStatus = StockStatus.wellStocked,
   }) async {
@@ -250,7 +250,7 @@ class InventoryProvider extends ChangeNotifier {
 
   // ─── Spoilage ──────────────────────────────────────────────────────
 
-  Future<void> logSpoilage(int itemId, double value, String? note,
+  Future<void> logSpoilage(int itemId, int value, String? note,
       {bool markEmpty = true}) async {
     try {
       await _db.insertSpoilage(SpoilageEntry(
@@ -275,21 +275,16 @@ class InventoryProvider extends ChangeNotifier {
   Future<List<SpoilageEntry>> spoilageLog({int limit = 100}) =>
       _db.getSpoilageLog(limit: limit);
 
-  Future<double> spoilageTotalSince(DateTime since) =>
+  Future<int> spoilageTotalSince(DateTime since) =>
       _db.spoilageTotalSince(since.toIso8601String());
 
   // ─── Owner consumption ─────────────────────────────────────────────
 
-  /// Records personal use as a flagged transaction under the hidden
-  /// "Personal Use" pseudo-customer so it never appears in the Credit Book.
+  /// Records personal use as an owner-consumption transaction with no
+  /// customer. It never appears in the Credit Book.
   Future<bool> recordOwnerUse(List<Map<String, dynamic>> lines) async {
     try {
-      var customer = await _db.getCustomerByName('Personal Use');
-      customer ??= await _db.getCustomerById(
-          await _db.insertCustomer(Customer(name: 'Personal Use')));
-      final customerId = customer?.id;
-      if (customerId == null) return false;
-      await _db.insertTransactionWithItems(customerId, lines,
+      await _db.insertTransactionWithItems(null, lines,
           isOwnerConsumption: true);
       return true;
     } catch (e, s) {
@@ -313,21 +308,27 @@ class InventoryProvider extends ChangeNotifier {
       final ownerCountMonth = ownerLog
           .where((r) => (r['date'] as String? ?? '').compareTo(monthStart) >= 0)
           .length;
+      final sales = summary['sales'] ?? 0;
+      final ownerUse = summary['owner_use'] ?? 0;
       return {
-        'sales': summary['sales'] ?? 0.0,
-        'collected': summary['collected'] ?? 0.0,
-        'owner_use': summary['owner_use'] ?? 0.0,
+        'sales': sales,
+        'collected': summary['collected'] ?? 0,
+        'cash_sales': summary['cash_sales'] ?? 0,
+        'owner_use': ownerUse,
         'spoilage': spoilage,
+        'net': sales - ownerUse - spoilage,
         'top_items': topItems,
         'owner_use_count': ownerCountMonth,
       };
     } catch (e, s) {
       logError('monthly-report', e, s);
       return {
-        'sales': 0.0,
-        'collected': 0.0,
-        'owner_use': 0.0,
-        'spoilage': 0.0,
+        'sales': 0,
+        'collected': 0,
+        'cash_sales': 0,
+        'owner_use': 0,
+        'spoilage': 0,
+        'net': 0,
         'top_items': const [],
         'owner_use_count': 0,
       };

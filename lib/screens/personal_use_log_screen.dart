@@ -31,13 +31,13 @@ class _PersonalUseLogScreenState extends State<PersonalUseLogScreen> {
     });
   }
 
-  double get _totalThisMonth {
+  int get _totalThisMonth {
     final monthStart = DateTime(DateTime.now().year, DateTime.now().month);
-    double sum = 0;
+    var sum = 0;
     for (final row in _log) {
       final date = DateTime.tryParse(row['date'] as String? ?? '');
       if (date != null && date.isAfter(monthStart)) {
-        sum += (row['total_amount'] as num?)?.toDouble() ?? 0;
+        sum += (row['total_amount'] as num?)?.toInt() ?? 0;
       }
     }
     return sum;
@@ -46,7 +46,7 @@ class _PersonalUseLogScreenState extends State<PersonalUseLogScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Personal Use Log'), centerTitle: true),
+      appBar: AppBar(title: const Text('Personal use log'), centerTitle: true),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -93,7 +93,7 @@ class _PersonalUseLogScreenState extends State<PersonalUseLogScreen> {
                                 subtitle: Text(formatDate(row['date'] as String)),
                                 trailing: Text(
                                   formatCurrency(
-                                      (row['total_amount'] as num).toDouble()),
+                                      (row['total_amount'] as num).toInt()),
                                   style: const TextStyle(fontWeight: FontWeight.w600),
                                 ),
                               );

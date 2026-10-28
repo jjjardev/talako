@@ -5,6 +5,7 @@ import '../models/item.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
 import '../utils/currency_format.dart';
+import '../utils/money.dart';
 import '../utils/snackbars.dart';
 import '../widgets/alphabet_strip.dart';
 
@@ -38,12 +39,15 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
       builder: (context, inv, _) {
         final items = inv.filteredItems;
         final showAzStrip = true; // always show A-Z for findability, even in urgent
-        // Badge counts for chips (quantity-free, read-only)
-        final allCount = inv.items.length;
-        final retailCount = inv.items.where((i) => i.usageType != UsageType.ingredientOnly).length;
-        final ingCount = inv.items.where((i) => i.isIngredient).length;
         final lowOutCount = inv.shoppingList.length;
-        final coldCount = inv.items.where((i) => i.stockStatus == StockStatus.cold).length;
+        final coldCount = inv.items
+            .where((i) => i.stockStatus == StockStatus.cold)
+            .length;
+        final collapsedFilters = [
+          StockFilter.all,
+          StockFilter.lowOrOut,
+          StockFilter.cold,
+        ];
         return Column(
           children: [
             Row(
@@ -56,16 +60,15 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                       padding:
                           const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       children: [
-                        for (final f in StockFilter.values)
+                        for (final f in collapsedFilters)
                           Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: ChoiceChip(
                               label: Text(switch (f) {
-                                StockFilter.all => 'All ($allCount)',
-                                StockFilter.retail => 'Retail ($retailCount)',
-                                StockFilter.ingredients => 'Ingredients ($ingCount)',
+                                StockFilter.all => 'All',
                                 StockFilter.lowOrOut => 'Low / Out ($lowOutCount)',
-                                StockFilter.cold => 'Cold ($coldCount)',
+                                StockFilter.cold => 'Archived ($coldCount)',
+                                _ => 'Retail',
                               }),
                               selected: inv.filter == f,
                               onSelected: (_) => inv.setFilter(f),
@@ -74,6 +77,24 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
                       ],
                     ),
                   ),
+                ),
+                PopupMenuButton<StockFilter>(
+                  tooltip: 'More filters',
+                  icon: Icon(
+                    Icons.filter_alt_outlined,
+                    color: inv.filter == StockFilter.retail ||
+                            inv.filter == StockFilter.ingredients
+                        ? Colors.teal.shade700
+                        : null,
+                  ),
+                  onSelected: inv.setFilter,
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                        value: StockFilter.retail, child: Text('Retail items')),
+                    PopupMenuItem(
+                        value: StockFilter.ingredients,
+                        child: Text('Ingredients')),
+                  ],
                 ),
                 Tooltip(
                   message: inv.sort == ShelfSort.alpha
@@ -264,6 +285,16 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.remove_shopping_cart_outlined,
+                  size: 20, color: Colors.orange),
+              title: const Text('Log loss / spoilage'),
+              subtitle: const Text('Records a loss and marks the item Out'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _logLoss(context, item);
+              },
+            ),
+            ListTile(
               leading:
                   const Icon(Icons.edit_outlined, size: 20),
               title: const Text('Edit details'),
@@ -276,6 +307,62 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _logLoss(BuildContext context, Item item) async {
+    final value = TextEditingController(
+        text: item.price > 0 ? formatMinorPlain(item.price) : '');
+    final note = TextEditingController();
+    final inv = context.read<InventoryProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Log loss: ${item.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: value,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Estimated value (₱)',
+                prefixText: '₱ ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: note,
+              decoration: const InputDecoration(
+                labelText: 'Note (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Log loss')),
+        ],
+      ),
+    );
+    final minor = parseMajorToMinor(value.text) ?? 0;
+    final noteText = note.text.trim();
+    value.dispose();
+    note.dispose();
+    if (confirmed != true) return;
+    if (minor <= 0) {
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Enter the estimated value')));
+      return;
+    }
+    await inv.logSpoilage(item.id!, minor, noteText.isEmpty ? null : noteText);
+    messenger.showSnackBar(SnackBar(content: Text('Loss logged for ${item.name}')));
   }
 
   void _openEditor(BuildContext context, Item item) {
@@ -446,7 +533,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
   late final TextEditingController _notes =
       TextEditingController(text: widget.item.notes ?? '');
   late final TextEditingController _price =
-      TextEditingController(text: widget.item.price.toString());
+      TextEditingController(text: formatMinorPlain(widget.item.price));
   String? _nameError;
   bool _saving = false;
 
@@ -468,7 +555,7 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       _saving = true;
       _nameError = null;
     });
-    final price = double.tryParse(_price.text.trim()) ?? widget.item.price;
+    final price = parseMajorToMinor(_price.text.trim()) ?? widget.item.price;
     final statusChanged = _stockStatus != widget.item.stockStatus;
     final nowIso = statusChanged ? DateTime.now().toIso8601String() : null;
     final error = await context.read<InventoryProvider>().updateItem(
@@ -490,29 +577,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
-    if (mounted) Navigator.pop(context);
-  }
-
-  Future<void> _delete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete item?'),
-        content: Text(
-            '"${widget.item.name}" will be removed from your shelf.\n\n'
-            'Past sales of this item stay in your records - deleting it '
-            'never erases money owed to you.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await context.read<InventoryProvider>().deleteItem(widget.item.id!);
     if (mounted) Navigator.pop(context);
   }
 
@@ -617,12 +681,6 @@ class _ItemEditorSheetState extends State<_ItemEditorSheet> {
             const SizedBox(height: 12),
             Row(
               children: [
-                TextButton.icon(
-                  onPressed: _saving ? null : _delete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Delete'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                ),
                 const Spacer(),
                 FilledButton(
                   onPressed: _saving ? null : _save,

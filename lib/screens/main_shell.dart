@@ -7,6 +7,7 @@ import 'add_item_sheet.dart';
 import 'add_credit_sheet.dart';
 import '../providers/transactions_provider.dart';
 import '../providers/inventory_provider.dart';
+import '../utils/backup_service.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -19,6 +20,15 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final ValueNotifier<StockSegment> _stockSegment =
       ValueNotifier<StockSegment>(StockSegment.shelf);
+  bool _showBackupBanner = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BackupService.shouldShowBanner().then((show) {
+      if (mounted && show) setState(() => _showBackupBanner = true);
+    });
+  }
 
   @override
   void dispose() {
@@ -35,7 +45,35 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: Column(
+        children: [
+          if (_showBackupBanner)
+            MaterialBanner(
+              content: const Text(
+                  'No recent backup. Export one to keep your data safe.'),
+              leading: const Icon(Icons.backup_outlined),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _currentIndex = 2;
+                      _showBackupBanner = false;
+                    });
+                  },
+                  child: const Text('Open Backup'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    await BackupService.dismissBanner();
+                    if (mounted) setState(() => _showBackupBanner = false);
+                  },
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            ),
+          Expanded(child: _screens[_currentIndex]),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {

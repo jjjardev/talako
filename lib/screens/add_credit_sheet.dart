@@ -8,6 +8,7 @@ import '../providers/transactions_provider.dart';
 import '../models/stock_enums.dart';
 import '../utils/app_logger.dart';
 import '../utils/currency_format.dart';
+import '../utils/money.dart';
 import '../utils/snackbars.dart';
 
 class AddCreditSheet extends StatefulWidget {
@@ -28,6 +29,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
   Map<String, Item> _itemsByLowerName = {};
   final List<_LineItem> _items = [];
   bool _saving = false;
+  bool _cashSale = false;
 
   @override
   void initState() {
@@ -56,15 +58,11 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     final price = _itemsByLowerName[key]?.price;
     if (price == null || price <= 0) return;
     line.price = price;
-    line.priceController.text = _formatPlain(price);
+    line.priceController.text = formatMinorPlain(price);
   }
 
-  static String _formatPlain(double v) =>
-      v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
-
-
-  double get _total {
-    double sum = 0;
+  int get _total {
+    var sum = 0;
     for (final item in _items) {
       sum += item.quantity * item.price;
     }
@@ -84,8 +82,9 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_customerController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter customer name')));
+    if (!_cashSale && _customerController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a customer name or mark it already paid')));
       return;
     }
 
@@ -98,14 +97,18 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     setState(() => _saving = true);
 
     final provider = context.read<CustomersProvider>();
-    final customer = await provider.getOrCreateCustomer(_customerController.text.trim());
-    if (!mounted) {
-      return;
-    }
-    if (customer == null || customer.id == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to create customer')));
-      setState(() => _saving = false);
-      return;
+    int? customerId;
+    if (!_cashSale) {
+      final customer =
+          await provider.getOrCreateCustomer(_customerController.text.trim());
+      if (!mounted) return;
+      if (customer == null || customer.id == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to create customer')));
+        setState(() => _saving = false);
+        return;
+      }
+      customerId = customer.id;
     }
 
     final itemNames = validItems.map((i) => i.itemName.trim()).toList();
@@ -116,7 +119,8 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     try {
       final txnId =
           await txnProvider.addTransactionWithItemNames(
-              customer.id!, itemNames, quantities, prices);
+              customerId, itemNames, quantities, prices,
+              isCashSale: _cashSale);
       if (mounted) {
         setState(() => _saving = false);
         // Capture everything needed before popping - after Navigator.pop
@@ -126,7 +130,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
         Navigator.pop(context);
         showAutoDismissSnackBar(
           messenger,
-          message: 'Credit added',
+          message: _cashSale ? 'Sale recorded' : 'Credit added',
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () {
@@ -201,7 +205,8 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
               children: [
                 const Icon(Icons.add_circle_outline, size: 24),
                 const SizedBox(width: 8),
-                const Text('New Credit', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(_cashSale ? 'New Sale' : 'New Credit',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close),
@@ -224,11 +229,10 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                   controller: controller,
                   focusNode: focusNode,
                   decoration: const InputDecoration(
-                    labelText: 'Customer Name',
+                    labelText: 'Customer Name (optional)',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.person),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
                   onChanged: (v) => _customerController.text = v,
                 );
               },
@@ -236,7 +240,14 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                 _customerController.text = v;
               },
             ),
-            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Already paid'),
+              subtitle: const Text('Cash sale - does not appear in the Credit Book'),
+              value: _cashSale,
+              onChanged: (v) => setState(() => _cashSale = v),
+            ),
+            const SizedBox(height: 4),
             const Text('Items', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
             const SizedBox(height: 8),
             Expanded(
@@ -281,7 +292,8 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                 ),
                 child: _saving
                     ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Save Credit', style: TextStyle(fontSize: 18)),
+                    : Text(_cashSale ? 'Save Sale' : 'Save Credit',
+                        style: const TextStyle(fontSize: 18)),
               ),
             ),
             const SizedBox(height: 16),
@@ -373,11 +385,11 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                       contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                       prefixText: '₱ ',
                     ),
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     onChanged: (v) {
                       // Manual edits win - autofill never overwrites these.
                       item.priceTouched = true;
-                      item.price = double.tryParse(v) ?? 0;
+                      item.price = parseMajorToMinor(v) ?? 0;
                       setState(() {});
                     },
                   ),
@@ -412,7 +424,7 @@ class _LineItem {
   final int id = _nextId++;
   String itemName = '';
   int quantity = 1;
-  double price = 0;
+  int price = 0;
   /// True once the user types a price manually - autofill then backs off.
   bool priceTouched = false;
   final TextEditingController nameController = TextEditingController();

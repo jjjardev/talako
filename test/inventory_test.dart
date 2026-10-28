@@ -80,11 +80,12 @@ void main() {
       expect(migrated, isNotNull);
       expect(migrated!.stockStatus, StockStatus.wellStocked);
       expect(migrated.usageType, UsageType.retailOnly);
+      expect(migrated.price, 4000);
 
       // New tables exist and are usable.
       final spoilageId = await db.insertSpoilage(SpoilageEntry(
         itemId: migrated.id!,
-        estimatedValue: 10.0,
+        estimatedValue: 10,
         date: DateTime.now().toIso8601String(),
       ));
       expect(spoilageId, greaterThan(0));
@@ -177,31 +178,22 @@ void main() {
       final customerId =
           await db.insertCustomer(Customer(name: 'Consumption Cust'));
 
-      // Normal credit...
       final normalTxn = await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Normal Sale Item', 'quantity': 1, 'price': 30, 'subtotal': 30.0},
+        {'item_name': 'Normal Sale Item', 'quantity': 1, 'price': 3000, 'subtotal': 3000},
       ]);
-      // ...and a personal-use one.
-      if (await db.getCustomerByName('Personal Use') == null) {
-        await db.insertCustomer(Customer(name: 'Personal Use'));
-      }
-      final personalCustomerId =
-          (await db.getCustomerByName('Personal Use'))!.id!;
-      await db.insertTransactionWithItems(personalCustomerId, [
-        {'item_name': 'Snack Stash', 'quantity': 1, 'price': 25, 'subtotal': 25.0},
+      final ownerTxn = await db.insertTransactionWithItems(null, [
+        {'item_name': 'Snack Stash', 'quantity': 1, 'price': 2500, 'subtotal': 2500},
       ], isOwnerConsumption: true);
 
       final bookRows = await db.getActiveTransactionsWithCustomer();
       expect(bookRows.any((r) => r['id'] == normalTxn), isTrue);
-      expect(bookRows.any((r) => r['customer_name'] == 'Personal Use'), isFalse,
+      expect(bookRows.any((r) => r['id'] == ownerTxn), isFalse,
           reason: 'owner consumption must be excluded everywhere');
-
-      final balances = await db.getCustomersWithBalances();
-      expect(balances.any((r) => r['name'] == 'Personal Use'), isFalse);
+      expect(await db.getCustomerByName('Personal Use'), isNull);
 
       final log = await db.getOwnerConsumptionLog();
-      expect(log.length, 1);
-      expect(log.first['item_names'], 'Snack Stash');
+      final ownerRow = log.firstWhere((r) => r['id'] == ownerTxn);
+      expect(ownerRow['item_names'], 'Snack Stash');
     });
   });
 
@@ -225,13 +217,13 @@ void main() {
       final itemId = await db.insertItem(Item(name: 'Spoil Tomatoes', price: 15));
       await db.insertSpoilage(SpoilageEntry(
         itemId: itemId,
-        estimatedValue: 45.0,
+        estimatedValue: 45,
         note: 'brownout',
         date: DateTime.now().toIso8601String(),
       ));
       await db.insertSpoilage(SpoilageEntry(
         itemId: itemId,
-        estimatedValue: 999.0,
+        estimatedValue: 999,
         date: '2020-01-01T00:00:00.000',
       ));
       final monthStart =
@@ -289,6 +281,27 @@ void main() {
           reason: 'one cycle moves well_stocked -> running_low');
     });
 
+    test('archiving keeps items and deleting clears spoilage links', () async {
+      final db = DatabaseHelper.instance;
+      final inv = InventoryProvider();
+      final id = await db.insertItem(Item(name: 'Prov Archive Me', price: 900));
+      await inv.loadInventory();
+      await inv.setStockStatus(id, StockStatus.cold);
+      var loaded = (await db.getAllItems()).firstWhere((i) => i.id == id);
+      expect(loaded.stockStatus, StockStatus.cold);
+      expect(inv.shoppingList.any((i) => i.id == id), isFalse);
+
+      await db.insertSpoilage(SpoilageEntry(
+        itemId: id,
+        estimatedValue: 900,
+        date: DateTime.now().toIso8601String(),
+      ));
+      await inv.deleteItem(id);
+      expect((await db.getAllItems()).any((i) => i.id == id), isFalse);
+      final log = await db.getSpoilageLog();
+      expect(log.every((e) => e.itemId != id), isTrue);
+    });
+
     test('monthly report aggregates windows', () async {
       final db = DatabaseHelper.instance;
       final inv = InventoryProvider();
@@ -297,7 +310,7 @@ void main() {
         {'item_name': 'Report Item A', 'quantity': 1, 'price': 100, 'subtotal': 100.0},
       ]);
       final report = await inv.monthlyReport(DateTime.now());
-      expect((report['sales'] as double), greaterThanOrEqualTo(100.0));
+      expect((report['sales'] as int), greaterThanOrEqualTo(100));
       expect(report['top_items'], isNotEmpty);
     });
   });

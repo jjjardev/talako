@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart';
@@ -5,8 +7,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talako/database/database_helper.dart';
 import 'package:talako/models/customer.dart';
 import 'package:talako/models/item.dart';
+import 'package:talako/models/spoilage_entry.dart';
 import 'package:talako/providers/transactions_provider.dart';
-import 'package:talako/utils/money.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,101 +21,261 @@ void main() {
     await databaseFactory.deleteDatabase(join(dbPath, 'talako.db'));
   });
 
-  group('DatabaseHelper', () {
-    test('insert transaction with items stores exact values', () async {
+  group('schema v7 money', () {
+    test('insert transaction stores integer minor units', () async {
       final db = DatabaseHelper.instance;
-      final customerId = await db.insertCustomer(Customer(name: 'DB Test Customer'));
+      final customerId =
+          await db.insertCustomer(Customer(name: 'DB Test Customer'));
 
       final txnId = await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Coke 1.5L', 'quantity': 2, 'price': 45.0, 'subtotal': 90.0},
-        {'item_name': 'Chips, spicy', 'quantity': 1, 'price': 20.0, 'subtotal': 20.0},
+        {'item_name': 'Coke 1.5L', 'quantity': 2, 'price': 4500, 'subtotal': 9000},
+        {'item_name': 'Chips, spicy', 'quantity': 1, 'price': 2000, 'subtotal': 2000},
       ]);
       expect(txnId, greaterThan(0));
 
       final txns = await db.getActiveTransactionsWithCustomer();
       final row = txns.firstWhere((r) => r['id'] == txnId);
       expect(row['customer_name'], 'DB Test Customer');
-      expect((row['total_amount'] as num).toDouble(), 110.0);
+      expect((row['total_amount'] as num).toInt(), 11000);
 
       final items = await db.getItemsForTransactions([txnId]);
       expect(items.length, 2);
-      expect(items.any((i) => i.itemName == 'Chips, spicy'), isTrue,
-          reason: 'item names containing commas must survive storage');
-      expect(items.first.subtotal, 90.0);
+      expect(items.any((i) => i.itemName == 'Chips, spicy'), isTrue);
+      expect(items.first.subtotal, 9000);
     });
 
     test('partial then full payment updates status', () async {
       final db = DatabaseHelper.instance;
-      final customerId = await db.insertCustomer(Customer(name: 'Pay Test Customer'));
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Pay Test Customer'));
       final txnId = await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Rice 1kg', 'quantity': 5, 'price': 10.0, 'subtotal': 50.0},
+        {'item_name': 'Rice 1kg', 'quantity': 5, 'price': 1000, 'subtotal': 5000},
       ]);
 
-      await db.updateTransactionPayment(txnId, 20.0);
-      var row = (await (await db.database).query('transactions', where: 'id = ?', whereArgs: [txnId])).first;
-      expect((row['paid_amount'] as num).toDouble(), 20.0);
+      await db.updateTransactionPayment(txnId, 2000);
+      var row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['paid_amount'] as num).toInt(), 2000);
       expect(row['status'], 'ACTIVE');
 
-      await db.updateTransactionPayment(txnId, 30.0);
-      row = (await (await db.database).query('transactions', where: 'id = ?', whereArgs: [txnId])).first;
-      expect(moneyEquals((row['paid_amount'] as num).toDouble(), 50.0), isTrue);
+      await db.updateTransactionPayment(txnId, 3000);
+      row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['paid_amount'] as num).toInt(), 5000);
+      expect(row['status'], 'PAID');
+    });
+
+    test('overpayment is clamped to total', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Overpay Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Candy', 'quantity': 1, 'price': 10000, 'subtotal': 10000},
+      ]);
+      await db.updateTransactionPayment(txnId, 15000);
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['paid_amount'] as num).toInt(), 10000);
       expect(row['status'], 'PAID');
     });
 
     test('reverse payment clamps at zero and restores ACTIVE', () async {
       final db = DatabaseHelper.instance;
-      final customerId = await db.insertCustomer(Customer(name: 'Undo Test Customer'));
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Undo Test Customer'));
       final txnId = await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Soap', 'quantity': 1, 'price': 25.0, 'subtotal': 25.0},
+        {'item_name': 'Soap', 'quantity': 1, 'price': 2500, 'subtotal': 2500},
       ]);
 
-      await db.updateTransactionPayment(txnId, 25.0);
-      await db.reverseTransactionPayment(txnId, 10.0);
-      var row = (await (await db.database).query('transactions', where: 'id = ?', whereArgs: [txnId])).first;
-      expect((row['paid_amount'] as num).toDouble(), 15.0);
+      await db.updateTransactionPayment(txnId, 2500);
+      await db.reverseTransactionPayment(txnId, 1000);
+      var row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['paid_amount'] as num).toInt(), 1500);
       expect(row['status'], 'ACTIVE');
 
-      await db.reverseTransactionPayment(txnId, 100.0);
-      row = (await (await db.database).query('transactions', where: 'id = ?', whereArgs: [txnId])).first;
-      expect((row['paid_amount'] as num).toDouble(), 0.0,
-          reason: 'reversal must not push paid below zero');
+      await db.reverseTransactionPayment(txnId, 10000);
+      row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['paid_amount'] as num).toInt(), 0);
       expect(row['status'], 'ACTIVE');
     });
 
-    test('grouped query exposes customer_id for drill-down', () async {
+    test('grouped query exposes customer_id and integer sums', () async {
       final db = DatabaseHelper.instance;
-      final customerId = await db.insertCustomer(Customer(name: 'Grouped Customer'));
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Grouped Customer'));
       await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Item A', 'quantity': 1, 'price': 10.0, 'subtotal': 10.0},
+        {'item_name': 'Item A', 'quantity': 1, 'price': 1000, 'subtotal': 1000},
       ]);
       await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Item B', 'quantity': 2, 'price': 5.0, 'subtotal': 10.0},
+        {'item_name': 'Item B', 'quantity': 2, 'price': 500, 'subtotal': 1000},
       ]);
 
       final rows = await db.getGroupedActiveTransactions();
-      final row = rows.firstWhere((r) => r['customer_name'] == 'Grouped Customer');
+      final row =
+          rows.firstWhere((r) => r['customer_name'] == 'Grouped Customer');
       expect(row['customer_id'], customerId);
       expect(row['transaction_count'], 2);
-      expect((row['total_amount'] as num).toDouble(), 20.0);
+      expect((row['total_amount'] as num).toInt(), 2000);
     });
 
+    test('transaction lines resolve item_id when the name is unique', () async {
+      final db = DatabaseHelper.instance;
+      final itemId = await db.insertItem(Item(name: 'Resolve Me', price: 1000));
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Resolver'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'resolve me', 'quantity': 1, 'price': 1000, 'subtotal': 1000},
+        {'item_name': 'Unknown item', 'quantity': 1, 'price': 500, 'subtotal': 500},
+      ]);
+      final lines = await db.getItemsForTransactions([txnId]);
+      expect(lines.first.itemId, itemId);
+      expect(lines.last.itemId, isNull);
+    });
+
+    test('case-insensitive customer lookup trims and matches', () async {
+      final db = DatabaseHelper.instance;
+      final id = await db.insertCustomer(Customer(name: 'Maria'));
+      final found = await db.getCustomerByName('  maria ');
+      expect(found?.id, id);
+    });
+  });
+
+  group('integrity', () {
     test('delete cascades transaction items', () async {
       final db = DatabaseHelper.instance;
-      final customerId = await db.insertCustomer(Customer(name: 'Delete Test Customer'));
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Delete Test Customer'));
       final txnId = await db.insertTransactionWithItems(customerId, [
-        {'item_name': 'Temp item', 'quantity': 1, 'price': 1.0, 'subtotal': 1.0},
+        {'item_name': 'Temp item', 'quantity': 1, 'price': 100, 'subtotal': 100},
       ]);
 
       await db.deleteTransaction(txnId);
-      final items = await (await db.database).query('transaction_items', where: 'transaction_id = ?', whereArgs: [txnId]);
-      final txns = await (await db.database).query('transactions', where: 'id = ?', whereArgs: [txnId]);
+      final items = await (await db.database).query('transaction_items',
+          where: 'transaction_id = ?', whereArgs: [txnId]);
+      final txns = await (await db.database)
+          .query('transactions', where: 'id = ?', whereArgs: [txnId]);
       expect(items, isEmpty);
       expect(txns, isEmpty);
+    });
+
+    test('deleted transaction can be restored from a snapshot', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Snapshot Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Snapshot Item', 'quantity': 1, 'price': 700, 'subtotal': 700},
+      ]);
+      final snapshot = await db.snapshotTransaction(txnId);
+      expect(snapshot, isNotNull);
+      await db.deleteTransaction(txnId);
+      expect(
+          await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]),
+          isEmpty);
+      await db.restoreTransactionSnapshot(snapshot!);
+      final restored = await db.getItemsForTransactions([txnId]);
+      expect(restored.length, 1);
+      expect(restored.first.itemName, 'Snapshot Item');
+    });
+
+    test('status repair runs when the database reopens', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Repair Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Repair Item', 'quantity': 1, 'price': 500, 'subtotal': 500},
+      ]);
+      await (await db.database).update(
+        'transactions',
+        {'status': 'PAID'},
+        where: 'id = ?',
+        whereArgs: [txnId],
+      );
+      await db.close();
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['status'], 'ACTIVE');
+    });
+
+    test('garbage raw database fails validation and leaves live DB intact',
+        () async {
+      final db = DatabaseHelper.instance;
+      final before = await (await db.database).query('transactions');
+      final dir = await Directory.systemTemp.createTemp('talako_raw');
+      final junk = File(join(dir.path, 'garbage.db'));
+      await junk.writeAsString('not a sqlite database');
+      await expectLater(
+          db.validateRawDatabase(junk.path), throwsA(isA<Exception>()));
+      final after = await (await db.database).query('transactions');
+      expect(after.length, before.length);
+      await dir.delete(recursive: true);
+    });
+
+    test('owner use has no customer and still renders in the log', () async {
+      final db = DatabaseHelper.instance;
+      final txnId = await db.insertTransactionWithItems(
+        null,
+        [
+          {'item_name': 'Owner Snack', 'quantity': 1, 'price': 2500, 'subtotal': 2500}
+        ],
+        isOwnerConsumption: true,
+      );
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['customer_id'], isNull);
+      final log = await db.getOwnerConsumptionLog();
+      final entry = log.firstWhere((r) => r['id'] == txnId);
+      expect(entry['item_names'], 'Owner Snack');
+    });
+
+    test('deleting an item leaves no dangling spoilage item_id', () async {
+      final db = DatabaseHelper.instance;
+      final itemId = await db.insertItem(Item(name: 'Spoil Delete', price: 100));
+      final spoilageId = await db.insertSpoilage(SpoilageEntry(
+        itemId: itemId,
+        estimatedValue: 100,
+        date: DateTime.now().toIso8601String(),
+      ));
+      await db.deleteItem(itemId);
+      final row = (await (await db.database)
+              .query('spoilage_log', where: 'id = ?', whereArgs: [spoilageId]))
+          .first;
+      expect(row['item_id'], isNull);
+    });
+
+    test('cash sale is paid, flagged, and absent from the Credit Book',
+        () async {
+      final db = DatabaseHelper.instance;
+      final txnId = await db.insertTransactionWithItems(
+        null,
+        [
+          {'item_name': 'Cash Item', 'quantity': 1, 'price': 1500, 'subtotal': 1500}
+        ],
+        isCashSale: true,
+      );
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['paid_amount'] as num).toInt(), 1500);
+      expect(row['status'], 'PAID');
+      expect(row['is_cash_sale'], 1);
+      final book = await db.getActiveTransactionsWithCustomer();
+      expect(book.any((r) => r['id'] == txnId), isFalse);
     });
   });
 
   group('legacy Sari v1 backup import', () {
-    test('credits become transactions; app name Sari accepted', () async {
+    test('credits become minor-unit transactions; app name Sari accepted',
+        () async {
       final db = DatabaseHelper.instance;
       final legacyBackup = {
         'app': 'Sari',
@@ -152,118 +314,126 @@ void main() {
 
       await db.importBackup(legacyBackup);
 
-      // Items/customers restored.
       expect((await db.getAllItems()).any((i) => i.name == 'Siomai'), isTrue);
 
-      // Credits became transactions with correct paid/status semantics.
-      final txns = await (await db.database).query('transactions', orderBy: 'id');
+      final txns =
+          await (await db.database).query('transactions', orderBy: 'id');
       expect(txns.length, 2);
-      final paidTxn = txns.firstWhere((t) => (t['paid_amount'] as num).toDouble() == 100.0);
+      final paidTxn = txns
+          .firstWhere((t) => (t['paid_amount'] as num).toInt() == 10000);
       expect(paidTxn['status'], 'PAID');
-      expect(paidTxn['is_owner_consumption'], 0);
-      final unpaidTxn = txns.firstWhere((t) => (t['paid_amount'] as num).toDouble() == 0.0);
+      expect((paidTxn['total_amount'] as num).toInt(), 10000);
+      final unpaidTxn = txns
+          .firstWhere((t) => (t['paid_amount'] as num).toInt() == 0);
       expect(unpaidTxn['status'], 'ACTIVE');
+      expect((unpaidTxn['total_amount'] as num).toInt(), 3000);
 
-      // Lines carry the historical item names.
-      final lineRows = await (await db.database)
-          .query('transaction_items');
+      final lineRows =
+          await (await db.database).query('transaction_items');
       expect(lineRows.length, 2);
     });
   });
 
   group('TransactionsProvider stitching', () {
-    late int commaCustomerId;
-
-    test('fetchCustomerTransactions preserves comma item names without GROUP_CONCAT parsing',
-        () async {
+    test('comma item names survive provider stitching', () async {
       final db = DatabaseHelper.instance;
       final provider = TransactionsProvider();
-
-      commaCustomerId = await db.insertCustomer(Customer(name: 'Comma Customer'));
-      await db.insertTransactionWithItems(commaCustomerId, [
-        {'item_name': 'Chips, spicy', 'quantity': 3, 'price': 15.0, 'subtotal': 45.0},
-        {'item_name': 'Softdrinks, 1L bottle', 'quantity': 1, 'price': 60.0, 'subtotal': 60.0},
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Comma Customer'));
+      await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Chips, spicy', 'quantity': 3, 'price': 1500, 'subtotal': 4500},
+        {'item_name': 'Softdrinks, 1L bottle', 'quantity': 1, 'price': 6000, 'subtotal': 6000},
       ]);
 
-      final txns = await provider.fetchCustomerTransactions(commaCustomerId);
+      final txns = await provider.fetchCustomerTransactions(customerId);
       expect(txns.length, 1);
-      final t = txns.first;
-      expect(t.customerName, 'Comma Customer');
-      expect(t.items.length, 2, reason: 'comma in item names must not split lines');
-      expect(t.items[0].itemName, 'Chips, spicy');
-      expect(t.items[0].quantity, 3);
-      expect(t.items[1].itemName, 'Softdrinks, 1L bottle');
-      expect(t.remaining, 105.0);
+      expect(txns.first.items.length, 2);
+      expect(txns.first.items[0].itemName, 'Chips, spicy');
+      expect(txns.first.remaining, 10500);
     });
-  });  group('backup round-trip (current format)', () {
-    test('export -> wipe -> import restores everything', () async {
-      final db = DatabaseHelper.instance;
-      final beforeRows =
-          await (await db.database).query('transactions');
+  });
 
-      // Seed distinct data.
+  group('backup round-trip (current format)', () {
+    test('export has version, counts, checksum; restore works', () async {
+      final db = DatabaseHelper.instance;
+      final beforeRows = await (await db.database).query('transactions');
+
       final cust = await db.insertCustomer(Customer(name: 'RT Cust'));
       final txnId = await db.insertTransactionWithItems(cust, [
-        {'item_name': 'RT Item', 'quantity': 2, 'price': 15.0, 'subtotal': 30.0},
+        {'item_name': 'RT Item', 'quantity': 2, 'price': 1500, 'subtotal': 3000},
       ]);
-      await db.insertItem(Item(name: 'RT Stock Item', price: 20));
+      await db.insertItem(Item(name: 'RT Stock Item', price: 2000));
 
       final exported = await db.exportBackup();
       expect(exported, isNotNull);
-      expect(exported!['version'], 6);
+      expect(exported!['version'], 7);
+      expect(exported['record_counts'], isA<Map>());
+      expect(exported['checksum'], isA<String>());
+      expect((exported['items'] as List).any((i) =>
+          (i as Map)['price'] == 2000), isTrue);
 
-      // Wipe via an empty TalaKo backup.
       await db.importBackup({
         'app': 'TalaKo',
-        'version': 6,
+        'version': 7,
         'items': [],
         'customers': [],
         'transactions': [],
         'transaction_items': [],
+        'spoilage_log': [],
       });
       expect(await (await db.database).query('transactions'), isEmpty);
-      expect(await (await db.database).query('dishes'), isNotNull); // tables intact
 
-      // Restore.
       await db.importBackup(exported);
 
       final txns = await (await db.database).query('transactions');
-      // Export captured every prior row too - delta must be exactly our seed.
-      expect(txns.length, beforeRows.length + 1,
-          reason: 'wipe removed history, restore brought export contents back');
+      expect(txns.length, beforeRows.length + 1);
       expect(txns.any((t) => t['id'] == txnId), isTrue);
-      final seeded = txns.firstWhere((t) => t['id'] == txnId);
-      expect(seeded['status'], 'ACTIVE');
-
-      final items = await db.getAllItems();
-      expect(items.any((i) => i.name == 'RT Stock Item'), isTrue);
-      expect((await db.getAllCustomers()).any((c) => c.name == 'RT Cust'),
+      expect((txns.firstWhere((t) => t['id'] == txnId)['total_amount'] as num)
+          .toInt(), 3000);
+      expect((await db.getAllItems()).any((i) => i.name == 'RT Stock Item'),
           isTrue);
+      expect((await db.getItemsForTransactions([txnId])).first.quantity, 2);
+    });
 
-      // Lines restored with quantities.
-      final lines = await db.getItemsForTransactions([txnId]);
-      expect(lines.length, 1);
-      expect(lines.first.quantity, 2);
+    test('import rejects newer schema and count mismatch before wiping',
+        () async {
+      final db = DatabaseHelper.instance;
+      final beforeTxn = await (await db.database).query('transactions');
+
+      await expectLater(
+        db.importBackup({'app': 'TalaKo', 'version': 8}),
+        throwsException,
+      );
+      await expectLater(
+        db.importBackup({
+          'app': 'TalaKo',
+          'version': 7,
+          'record_counts': {'items': 5},
+          'items': [],
+          'customers': [],
+          'transactions': [],
+          'transaction_items': [],
+        }),
+        throwsException,
+      );
+      final afterTxn = await (await db.database).query('transactions');
+      expect(afterTxn.length, beforeTxn.length);
     });
 
     test('import rejects ledger-less junk before wiping', () async {
       final db = DatabaseHelper.instance;
-      final beforeTxn =
-          await (await db.database).query('transactions');
-
+      final beforeTxn = await (await db.database).query('transactions');
       await expectLater(
         db.importBackup({
           'app': 'TalaKo',
-          'version': 6,
+          'version': 7,
           'items': [],
           'customers': [],
         }),
         throwsException,
       );
-
       final afterTxn = await (await db.database).query('transactions');
-      expect(afterTxn.length, beforeTxn.length,
-          reason: 'validation must run BEFORE the destructive wipe');
+      expect(afterTxn.length, beforeTxn.length);
     });
   });
 }

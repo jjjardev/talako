@@ -11,7 +11,7 @@ Future<void> openPayFlow(
   ActiveTransaction t, {
   VoidCallback? onAfter,
 }) async {
-  final amount = await showModalBottomSheet<double>(
+  final amount = await showModalBottomSheet<int>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,

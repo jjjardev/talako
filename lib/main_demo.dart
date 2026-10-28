@@ -21,8 +21,8 @@ Future<void> main() async {
   DatabaseHelper.databaseName = 'talako_demo.db';
 
   final prefs = await SharedPreferences.getInstance();
-  final isDark = prefs.getBool('theme_mode') ?? true;
-  const requiredVersion = 3;
+  final themeMode = ThemeProvider.loadMode(prefs);
+  const requiredVersion = 4;
   final storedVersion = prefs.getInt('onboarding_version') ?? 0;
   final demoVersion = prefs.getInt('demo_version') ?? 0;
 
@@ -34,12 +34,14 @@ Future<void> main() async {
     await prefs.setInt('onboarding_version', 999);
   }
 
-  final showOnboarding = (prefs.getInt('onboarding_version') ?? storedVersion) < requiredVersion;
+  final showOnboarding =
+      (prefs.getInt('onboarding_version') ?? storedVersion) < requiredVersion;
 
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider(isDark: isDark)),
+        ChangeNotifierProvider(
+            create: (_) => ThemeProvider(initialMode: themeMode)),
         ChangeNotifierProvider(create: (_) => CustomersProvider()),
         ChangeNotifierProvider(create: (_) => TransactionsProvider()),
         ChangeNotifierProvider(create: (_) => InventoryProvider()),

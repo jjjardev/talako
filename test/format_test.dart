@@ -4,13 +4,13 @@ import 'package:talako/utils/date_format.dart';
 
 void main() {
   test('formatCurrency uses peso symbol and groups thousands', () {
-    final out = formatCurrency(1234.5);
+    final out = formatCurrency(123450);
     expect(out.contains('₱'), isTrue);
     expect(out.replaceAll(RegExp(r'[^0-9.]'), ''), '1234.50');
   });
 
-  test('formatCurrency handles small amounts without float noise', () {
-    expect(formatCurrency(0.1 + 0.2).replaceAll(RegExp(r'[^0-9.]'), ''), endsWith('30'));
+  test('formatCurrency renders minor units exactly', () {
+    expect(formatCurrency(30).replaceAll(RegExp(r'[^0-9.]'), ''), endsWith('0.30'));
   });
 
   test('formatDate renders full timestamp', () {

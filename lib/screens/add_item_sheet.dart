@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/stock_enums.dart';
 import '../providers/inventory_provider.dart';
+import '../utils/money.dart';
 
 class AddItemSheet extends StatefulWidget {
   const AddItemSheet({super.key});
@@ -13,7 +14,7 @@ class AddItemSheet extends StatefulWidget {
 class _AddItemSheetState extends State<AddItemSheet> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
-  UsageType _usageType = UsageType.retailOnly;
+  bool _notSoldDirectly = false;
   StockStatus _stockStatus = StockStatus.wellStocked;
   bool _saving = false;
 
@@ -26,13 +27,13 @@ class _AddItemSheetState extends State<AddItemSheet> {
 
   Future<void> _save() async {
     final name = _nameController.text.trim();
-    final price = double.tryParse(_priceController.text.trim()) ?? 0;
+    final price = parseMajorToMinor(_priceController.text.trim()) ?? 0;
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Enter item name')));
       return;
     }
-    if (_usageType != UsageType.ingredientOnly && price <= 0) {
+    if (!_notSoldDirectly && price <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Enter a selling price above 0')));
       return;
@@ -41,7 +42,8 @@ class _AddItemSheetState extends State<AddItemSheet> {
     final error = await context.read<InventoryProvider>().addItem(
           name: name,
           price: price,
-          usageType: _usageType,
+          usageType:
+              _notSoldDirectly ? UsageType.ingredientOnly : UsageType.retailOnly,
           stockStatus: _stockStatus,
         );
     if (!mounted) return;
@@ -86,35 +88,24 @@ class _AddItemSheetState extends State<AddItemSheet> {
               border: OutlineInputBorder(),
             ),
           ),
-          if (_usageType != UsageType.ingredientOnly) ...[
-            const SizedBox(height: 12),
-            TextField(
-              controller: _priceController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Selling Price (₱)',
-                prefixText: '₱ ',
-                border: OutlineInputBorder(),
-              ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _priceController,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Selling Price (₱)',
+              prefixText: '₱ ',
+              border: OutlineInputBorder(),
             ),
-            const SizedBox(height: 12),
-          ] else ...[
-            const SizedBox(height: 4),
-            Text('Not sold directly - no selling price needed.',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-            const SizedBox(height: 8),
-          ],
-          SegmentedButton<UsageType>(
-            segments: const [
-              ButtonSegment(value: UsageType.retailOnly, label: Text('Retail')),
-              ButtonSegment(value: UsageType.ingredientOnly, label: Text('Ingredient')),
-              ButtonSegment(value: UsageType.both, label: Text('Both')),
-            ],
-            selected: {_usageType},
-            onSelectionChanged: (s) => setState(() => _usageType = s.first),
           ),
-          const SizedBox(height: 10),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Not sold directly (ingredient)'),
+            value: _notSoldDirectly,
+            onChanged: (v) => setState(() => _notSoldDirectly = v ?? false),
+          ),
+          const SizedBox(height: 4),
           Row(
             children: [
               const SizedBox(width: 48, child: Text('Shelf:', style: TextStyle(fontSize: 13))),

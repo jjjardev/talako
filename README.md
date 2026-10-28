@@ -2,15 +2,15 @@
 
 > **Track debts. Never lose a notebook again.** — Offline-first, no internet, no account.
 
-[![Version](https://img.shields.io/badge/version-2.13.0%2B1-teal)](https://github.com/jjjardev/talako/releases/tag/v2.13.0)
-[![Schema](https://img.shields.io/badge/schema-v6-blue)](https://github.com/jjjardev/talako/blob/main/lib/database/database_helper.dart)
-[![Tests](https://img.shields.io/badge/tests-32%20passed-brightgreen)](https://github.com/jjjardev/talako/actions)
+[![Version](https://img.shields.io/badge/version-2.14.0%2B1-teal)](https://github.com/jjjardev/talako/releases/tag/v2.14.0)
+[![Schema](https://img.shields.io/badge/schema-v7-blue)](https://github.com/jjjardev/talako/blob/main/lib/database/database_helper.dart)
+[![Tests](https://img.shields.io/badge/tests-44%20passed-brightgreen)](https://github.com/jjjardev/talako/actions)
 [![License](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%205.0%2B-green)]()
 
 **TalaKo** is an **offline-first** Android app for small store owners who sell on credit. No internet needed. No account required. Your data stays on your phone.
 
-[📥 Download Latest APK (v2.13.0)](https://github.com/jjjardev/talako/releases/tag/v2.13.0) • [📖 Full Documentation](DOCUMENTATION.md) • [📋 Changelog](DOCUMENTATION.md#15-changelog-summary) • [💡 Pitch Guide](PITCH.md)
+[📥 Download Latest APK (v2.14.0)](https://github.com/jjjardev/talako/releases/tag/v2.14.0) • [📖 Full Documentation](DOCUMENTATION.md) • [📋 Changelog](DOCUMENTATION.md#15-changelog-summary) • [💡 Pitch Guide](PITCH.md)
 
 ---
 
@@ -30,13 +30,13 @@
 | Area | Highlights |
 |------|------------|
 | **🧾 Credit Book** | Swipe right → `Fully paid` with **Undo** · Oldest-first, full item breakdown (`name · qty × price · subtotal`) · Red `14+ days` / Orange `7+ days` / Grey recent · Overdue warning chip · Search by name · Group by customer toggle |
-| **➕ Credit Recording** | `+` with multiple items · Autocomplete for customers & items (recent first) · Quantity steppers + inline price, auto total · `Undo` Snackbar after save |
-| **💳 Payments** | Numpad (2-decimal, backspace) · Partial payments · Receipt-based (whole transaction) · Full-payment detection + `Undo` to reverse |
-| **📦 Stock Watch (Shelf)** | **Macro only — no counting, ever.** `Well Stocked → Running Low → Out of Stock` **tap to cycle** ( `Cold / Archive` is **long-press only**, hidden from Shopping) · Cards show **price** (if Retail/Both), **status `• today / • Nd ago`**, usage icon · Filter chips **with live counts** `All (n) Retail (n) Ingredients (n) Low/Out (n) Cold (n)` · **A–Z / Urgent** sort (choice persists, A–Z strip always visible) · **Long-press → Quick Actions** (set status, `Restocked`, `Archive`) → **Edit details** (rename, price, notes, `Retail / Ingredient / Both` — renaming never rewrites past receipts) · `Tap to cycle` hint + **Undo** |
+| **➕ Credit Recording** | `+` with multiple items · Customer optional · **Already paid** cash-sale toggle · Autocomplete for items · Quantity steppers + inline price, integer-centavo total · `Undo` Snackbar after save |
+| **💳 Payments** | Numpad (2-decimal, backspace) · Partial payments · Receipt-based (whole transaction) · Overpayment rejected · Full-payment detection + `Undo` to reverse |
+| **📦 Stock Watch (Shelf)** | **Macro only — no counting, ever.** `Well Stocked → Running Low → Out of Stock` **tap to cycle** ( `Cold / Archive` is **long-press only**, hidden from Shopping) · Cards show **price** (if Retail/Both), **status `• today / • Nd ago`**, usage icon · Filter chips `All · Low/Out · Archived` with Retail/Ingredients in the overflow filter · **A–Z / Urgent** sort (choice persists, A–Z strip always visible) · **Long-press → Quick Actions** (set status, `Restocked`, `Archive`, `Log loss / spoilage`) → **Edit details** (rename, price, notes, `Retail / Ingredient / Both` — renaming never rewrites past receipts) · `Tap to cycle` hint + **Undo** |
 | **🛒 Shopping List** | Auto-built from `Running Low / Out of Stock` (Out first, then Low) · **Check off** as bought (→ `Well Stocked`) or **`Restock all (n)`** in one tap · **Share** via system sheet — `SHOPPING LIST — MMM dd, yyyy (n items)` per-line `- Name — ₱ price (label)` (count-only, no qty) |
-| **🙋 Owner Tools** | `Owner Took Stock` quick log (never sales/debt) · `Personal Use Log` + **Monthly Store Report** (sales, collected, owner use, spoilage, top sellers) · Out-of-stock nudge (`Back in stock` Snackbar after selling OOS) |
-| **💾 Backup & Restore** | **JSON** (human-readable) + **Raw .db** (binary) export via share sheet · Import both with confirmation · WAL checkpoint before raw export · Legacy `Sari` v1 `credits` import |
-| **⚙️ Settings** | Dark/Light (persisted) · `Settled Debts` · `Monthly Report` · All backup ops · `Onboarding` (6 pages: Welcome, Credit Book, Recording, Stock Watch, Shopping List, Payments & Undo — `Skip` + `Next/Get Started`, stored `onboarding_version=3`) |
+| **🙋 Owner Tools** | `Personal use` quick log (never sales/debt) · `Personal use log` + **Monthly Summary** (sales, cash sales, collected, owner use, spoilage, net, top sellers) · Out-of-stock nudge (`Back in stock` Snackbar after selling OOS) |
+| **💾 Backup & Restore** | **JSON** with record counts + checksum + **Raw .db** export · Validated, sidecar-safe raw restore · Pre-v7 backup on migration · First-launch and empty-book restore · Legacy `Sari` v1 `credits` import |
+| **⚙️ Settings** | Dark / Light / Follow system · Grouped Record, Data, Backup, About · `Onboarding` (4 pages: Money, Shelf, Shopping, Backup — `Skip` + `Next/Get Started`, stored `onboarding_version=4`) |
 
 <details>
 <summary>More details</summary>
@@ -86,12 +86,12 @@ Any micro-business extending credit where a paper notebook is the current system
 |--------|-------|
 | **Platform** | Android (offline-first) |
 | **Framework** | Flutter 3.x (Dart `^3.11.5`) |
-| **Database** | SQLite (`sqflite`), **schema v6** (`migrations v1→v6`) |
+| **Database** | SQLite (`sqflite`), **schema v7** (`migrations v1→v7`) |
 | **State** | `Provider` (`ChangeNotifier`) — `CustomersProvider`, `TransactionsProvider`, `InventoryProvider`, `ThemeProvider` |
-| **APK size** | **~52 MB** (measured `v2.13.0` `assembleRelease`) |
+| **APK size** | **~52 MB** (measured `v2.14.0` `assembleRelease`) |
 | **Min SDK** | Android 5.0 (API 21) |
 | **Internet** | **Not required** — no `INTERNET` permission |
-| **Tests** | **32** automated (`database` 9 · `inventory` 12 · `money` 4 · `format` 4 · `snackbars` 3) |
+| **Tests** | **44** automated (`database` 19 · `inventory` 13 · `migration` 1 · `money` 4 · `format` 4 · `snackbars` 3) |
 | **License** | Apache 2.0 |
 
 ---
@@ -104,7 +104,7 @@ Any micro-business extending credit where a paper notebook is the current system
 ```text
 lib/
 ├── main.dart                      # App entry + prefs preload, providers, routing
-├── database/database_helper.dart  # SQLite singleton (schema v6, migrations v1→v6, backup)
+├── database/database_helper.dart  # SQLite singleton (schema v7, migrations v1→v7, backup)
 ├── models/
 │   ├── customer.dart
 │   ├── customer_summary.dart
@@ -129,10 +129,10 @@ lib/
 │   ├── pay_sheet.dart             # Numpad payment sheet
 │   ├── customer_detail_screen.dart# Per-customer drill-down + Mark all as paid
 │   ├── settled_debts_screen.dart  # Fully-paid history
-│   ├── owner_use_sheet.dart       # Owner Took Stock quick log
+│   ├── owner_use_sheet.dart       # Personal use quick log
 │   ├── personal_use_log_screen.dart# Owner consumption history
 │   ├── settings_screen.dart       # Theme, Settled Debts, Monthly Report, Backup/Restore (JSON + raw .db)
-│   └── onboarding_screen.dart     # 6-page first-launch tutorial (onboarding_version=3)
+│   └── onboarding_screen.dart     # 4-page first-launch tutorial + restore (onboarding_version=4)
 ├── widgets/
 │   └── alphabet_strip.dart        # A-Z quick-jump strip (tap, not drag)
 └── utils/
@@ -159,7 +159,7 @@ test/
 
 ```bash
 flutter pub get
-flutter test        # 32 tests
+flutter test        # 44 tests
 flutter build apk --release
 ```
 
