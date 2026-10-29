@@ -131,11 +131,18 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
     final hasData = switch (provider.filter) {
       CreditBookFilter.transcribed =>
         _filteredTranscribed(provider).isNotEmpty,
-      CreditBookFilter.all || CreditBookFilter.active =>
+      CreditBookFilter.allOpen || CreditBookFilter.active =>
         grouped ? _filteredGrouped(provider).isNotEmpty : _filteredIndividual(provider).isNotEmpty,
     };
 
-    if (!hasData) return _buildEmpty(context, provider);
+    if (!hasData) {
+      return Column(
+        children: [
+          _buildSummaryBar(provider),
+          Expanded(child: _buildEmpty(context, provider)),
+        ],
+      );
+    }
 
     return Column(
       children: [
@@ -293,7 +300,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
           },
           child: _TransactionTile(
             t: t,
-            showBadge: provider.filter == CreditBookFilter.all,
+            showBadge: provider.filter == CreditBookFilter.allOpen,
             onLongPress: () => _showTransactionActions(context, t),
             onOpenCustomer: () => _openCustomerDetail(
                 context,
@@ -323,6 +330,9 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
         return _TranscribedTile(
           t: t,
           onLongPress: () => _showTransactionActions(context, t),
+          onPay: t.isPaid
+              ? null
+              : () => openPayFlow(context, t, onAfter: provider.loadActiveTransactions),
           onOpenCustomer: () {
             if (t.customerName.isEmpty) return;
             _openCustomerDetail(
@@ -549,16 +559,8 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
   }
 
   Widget _buildSummaryBar(TransactionsProvider provider) {
-    final overdueTotal = provider.totalOverdue;
-    var total = 0;
-
-    if (provider.isGrouped) {
-      for (final g in provider.groupedCustomers) {
-        total += g.remaining;
-      }
-    } else {
-      total = provider.totalOutstanding;
-    }
+    final overdueTotal = provider.totalOverdueAll;
+    final total = provider.totalOutstandingAll;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -580,9 +582,12 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                     children: [
                       const Icon(Icons.warning, color: Colors.red, size: 20),
                       const SizedBox(width: 8),
-                      Text(
-                        'Overdue: ${formatCurrency(overdueTotal)}',
-                        style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16),
+                      Expanded(
+                        child: Text(
+                          'Overdue: ${formatCurrency(overdueTotal)}'
+                          '${provider.overdueCountAll > 0 ? ' · ${provider.overdueCountAll} receipt(s)' : ''}',
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                       ),
                     ],
                   ),
@@ -761,11 +766,13 @@ class _TranscribedTile extends StatelessWidget {
   final ActiveTransaction t;
   final VoidCallback onLongPress;
   final VoidCallback onOpenCustomer;
+  final VoidCallback? onPay;
 
   const _TranscribedTile({
     required this.t,
     required this.onLongPress,
     required this.onOpenCustomer,
+    this.onPay,
   });
 
   @override
@@ -798,11 +805,41 @@ class _TranscribedTile extends StatelessWidget {
                   ],
                 ),
               ),
-              Text(formatCurrency(t.totalAmount),
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(width: 6),
-              const Icon(Icons.chevron_right, size: 18),
+              if (t.isPaid)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('Paid',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade800)),
+                )
+              else ...[
+                Text(formatCurrency(t.remaining),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.payments, size: 18),
+                    label: const Text('Pay', style: TextStyle(fontSize: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onPressed: onPay,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

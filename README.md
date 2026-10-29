@@ -2,15 +2,15 @@
 
 > **Track debts. Never lose a notebook again.** — Offline-first, no internet, no account.
 
-[![Version](https://img.shields.io/badge/version-2.15.0%2B1-teal)](https://github.com/jjjardev/talako/releases/tag/v2.15.0)
+[![Version](https://img.shields.io/badge/version-2.16.0%2B1-teal)](https://github.com/jjjardev/talako/releases/tag/v2.16.0)
 [![Schema](https://img.shields.io/badge/schema-v8-blue)](https://github.com/jjjardev/talako/blob/main/lib/database/database_helper.dart)
-[![Tests](https://img.shields.io/badge/tests-52%20passed-brightgreen)](https://github.com/jjjardev/talako/actions)
+[![Tests](https://img.shields.io/badge/tests-58%20passed-brightgreen)](https://github.com/jjjardev/talako/actions)
 [![License](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%205.0%2B-green)]()
 
 **TalaKo** is an **offline-first** Android app for small store owners who sell on credit. No internet needed. No account required. Your data stays on your phone.
 
-[📥 Download Latest APK (v2.15.0)](https://github.com/jjjardev/talako/releases/tag/v2.15.0) • [📖 Full Documentation](DOCUMENTATION.md) • [📋 Changelog](DOCUMENTATION.md#15-changelog-summary) • [💡 Pitch Guide](PITCH.md)
+[📥 Download Latest APK (v2.16.0)](https://github.com/jjjardev/talako/releases/tag/v2.16.0) • [📖 Full Documentation](DOCUMENTATION.md) • [📋 Changelog](DOCUMENTATION.md#15-changelog-summary) • [💡 Pitch Guide](PITCH.md)
 
 ---
 
@@ -29,7 +29,7 @@
 
 | Area | Highlights |
 |------|------------|
-| **🧾 Credit Book** | Swipe right → `Fully paid` with **Undo** · Oldest-first, full item breakdown (`name · qty × price · subtotal`) · Red `14+ days` / Orange `7+ days` / Grey recent · Overdue warning chip · Search by name · Group by customer toggle · **All / Active / Transcribed** filters · long-press to mark or unmark a receipt as written in the physical book, with Undo and an “in book” badge |
+| **🧾 Credit Book** | Swipe right → `Fully paid` with **Undo** · Oldest-first, full item breakdown (`name · qty × price · subtotal`) · Red `14+ days` / Orange `7+ days` / Grey recent · Overdue warning chip · Search by name · Group by customer toggle · **All open / Active / Transcribed** filters · long-press to mark or unmark a receipt as written in the physical book, with Undo and an “in book” badge · global header totals include transcribed debt · paid transcribed receipts stay visible with a **Paid** pill |
 | **➕ Credit Recording** | `+` with multiple items · Customer required unless **Already paid** cash-sale toggle · Autocomplete for items · Quantity steppers + inline price, integer-centavo total · `Undo` Snackbar after save |
 | **💳 Payments** | Numpad (2-decimal, backspace) · Partial payments · Receipt-based (whole transaction) · Overpayment rejected · Full-payment detection + `Undo` to reverse |
 | **📦 Stock Watch (Shelf)** | **Macro only — no counting, ever.** `Well Stocked → Running Low → Out of Stock` **tap to cycle** ( `Cold / Archive` is **long-press only**, hidden from Shopping) · Cards show **price** (if Retail/Both), **status `• today / • Nd ago`**, usage icon · Filter chips `All · Low/Out · Archived` with Retail/Ingredients in the overflow filter · **A–Z / Urgent** sort (choice persists, A–Z strip always visible) · **Long-press → Quick Actions** (set status, `Restocked`, `Archive`, `Log loss / spoilage`) → **Edit details** (rename, price, notes, `Retail / Ingredient / Both` — renaming never rewrites past receipts) · `Tap to cycle` hint + **Undo** |
@@ -88,10 +88,10 @@ Any micro-business extending credit where a paper notebook is the current system
 | **Framework** | Flutter 3.x (Dart `^3.11.5`) |
 | **Database** | SQLite (`sqflite`), **schema v8** (`migrations v1→v8`) |
 | **State** | `Provider` (`ChangeNotifier`) — `CustomersProvider`, `TransactionsProvider`, `InventoryProvider`, `ThemeProvider` |
-| **APK size** | **~58 MB** (measured `v2.14.0` `assembleRelease`) |
+| **APK size** | **~58 MB** (measured `v2.16.0` `assembleRelease`) |
 | **Min SDK** | Android 7.0 (API 24, verified from packaged APK) |
 | **Internet** | **Not required** — no `INTERNET` permission |
-| **Tests** | **52** automated (`database` 26 · `inventory` 13 · `migration` 2 · `money` 4 · `format` 4 · `snackbars` 3) |
+| **Tests** | **58** automated (`database` 32 · `inventory` 13 · `migration` 2 · `money` 4 · `format` 4 · `snackbars` 3) |
 | **License** | Apache 2.0 |
 
 ---
@@ -159,7 +159,7 @@ test/
 
 ```bash
 flutter pub get
-flutter test        # 52 tests
+flutter test        # 58 tests
 flutter build apk --release
 ```
 

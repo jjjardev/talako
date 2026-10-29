@@ -89,7 +89,8 @@ class SettingsScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.assessment_outlined),
                   title: const Text('Monthly Summary'),
-                  subtitle: const Text('Sales, cash sales, spoilage, top sellers'),
+                  subtitle: const Text(
+                      'Sales, collected, personal use, spoilage, net, top sellers'),
                   onTap: () => _showMonthlyReport(context),
                 ),
               ],
@@ -149,7 +150,7 @@ class SettingsScreen extends StatelessWidget {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('TalaKo'),
-              subtitle: Text('Version 2.15.0 · Offline only'),
+              subtitle: Text('Version 2.16.0 · Offline only'),
             ),
           ),
         ],

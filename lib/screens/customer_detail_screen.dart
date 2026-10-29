@@ -40,7 +40,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         content: Text(
             '${_transactions.length} receipt(s), remaining '
             '${formatCurrency(_totalOutstanding)}.\n\n'
-            'This cannot be undone.'),
+            'You can undo this from the snackbar.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
@@ -58,11 +58,21 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     if (!mounted) return;
     await _load();
     if (!mounted || result == null) return;
-    final (count, collected) = result;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-          '$count receipt(s) settled · ${formatCurrency(collected)} collected'),
-    ));
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<TransactionsProvider>();
+    showAutoDismissSnackBar(
+      messenger,
+      message:
+          '${result.settled} receipt(s) settled · ${formatCurrency(result.collected)} collected',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          messenger.clearSnackBars();
+          await provider.restorePaymentSnapshots(result.snapshots);
+          if (mounted) await _load();
+        },
+      ),
+    );
   }
 
   Future<bool> _confirmDelete(ActiveTransaction t) async {

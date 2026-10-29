@@ -45,8 +45,13 @@ class _EditTransactionSheetState extends State<EditTransactionSheet> {
   }
 
   Future<void> _save() async {
+    if (_lines.any((line) => line.price < 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Price cannot be negative')));
+      return;
+    }
     final valid = _lines
-        .where((line) => line.itemName.trim().isNotEmpty && line.price > 0)
+        .where((line) => line.itemName.trim().isNotEmpty && line.price >= 0)
         .toList();
     if (valid.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -191,11 +196,14 @@ class _EditTransactionSheetState extends State<EditTransactionSheet> {
                     controller: line.priceController,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Price (₱)',
                       prefixText: '₱ ',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                       isDense: true,
+                      errorText: line.price < 0
+                          ? 'Price cannot be negative'
+                          : null,
                     ),
                     onChanged: (v) {
                       line.price = parseMajorToMinor(v) ?? 0;

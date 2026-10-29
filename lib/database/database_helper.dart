@@ -701,6 +701,40 @@ class DatabaseHelper {
     return (result.first['balance'] as num).toInt();
   }
 
+  Future<int> getAllOutstandingTotal() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT COALESCE(SUM(total_amount - paid_amount), 0) AS total
+      FROM transactions
+      WHERE paid_amount < total_amount
+        AND is_owner_consumption = 0 AND is_cash_sale = 0
+    ''');
+    return (rows.first['total'] as num).toInt();
+  }
+
+  Future<int> getAllOverdueTotal({int days = 14}) async {
+    final db = await database;
+    final cutoff = DateTime.now().subtract(Duration(days: days)).toIso8601String();
+    final rows = await db.rawQuery('''
+      SELECT COALESCE(SUM(total_amount - paid_amount), 0) AS total
+      FROM transactions
+      WHERE paid_amount < total_amount
+        AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?
+    ''', [cutoff]);
+    return (rows.first['total'] as num).toInt();
+  }
+
+  Future<int> getOverdueCountAll({int days = 14}) async {
+    final db = await database;
+    final cutoff = DateTime.now().subtract(Duration(days: days)).toIso8601String();
+    final rows = await db.rawQuery('''
+      SELECT COUNT(*) AS cnt FROM transactions
+      WHERE paid_amount < total_amount
+        AND is_owner_consumption = 0 AND is_cash_sale = 0 AND date < ?
+    ''', [cutoff]);
+    return (rows.first['cnt'] as num).toInt();
+  }
+
   Future<List<Map<String, dynamic>>> getCustomersWithBalances() async {
     final db = await database;
     return await db.rawQuery('''
@@ -793,37 +827,59 @@ class DatabaseHelper {
     ''', args);
   }
 
-  Future<int> getTranscribedActiveCount() async {
+  Future<List<Map<String, dynamic>>> getTranscribedTransactions() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT t.*, c.name as customer_name
+      FROM transactions t
+      LEFT JOIN customers c ON c.id = t.customer_id
+      WHERE t.transcribed_to_book = 1
+        AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0
+      ORDER BY t.date DESC
+    ''');
+  }
+
+  Future<int> getTranscribedCount() async {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT COUNT(*) AS cnt FROM transactions
-      WHERE paid_amount < total_amount AND is_owner_consumption = 0
-        AND is_cash_sale = 0 AND transcribed_to_book = 1
+      WHERE transcribed_to_book = 1
+        AND is_owner_consumption = 0 AND is_cash_sale = 0
     ''');
     return (rows.first['cnt'] as num).toInt();
   }
 
   Future<int> markTranscribed(int transactionId) async {
     final db = await database;
-    return db.update(
+    final changed = await db.update(
       'transactions',
       {
         'transcribed_to_book': 1,
         'transcribed_at': DateTime.now().toIso8601String(),
       },
-      where: 'id = ? AND transcribed_to_book = 0',
+      where:
+          'id = ? AND transcribed_to_book = 0 AND is_owner_consumption = 0 AND is_cash_sale = 0',
       whereArgs: [transactionId],
     );
+    if (changed == 0) {
+      logInfo('markTranscribed no-op for transaction $transactionId');
+    }
+    return changed;
   }
 
   Future<int> unmarkTranscribed(int transactionId) async {
     final db = await database;
-    return db.update(
+    final changed = await db.update(
       'transactions',
       {'transcribed_to_book': 0, 'transcribed_at': null},
-      where: 'id = ? AND transcribed_to_book = 1',
+      where:
+          'id = ? AND transcribed_to_book = 1 AND is_owner_consumption = 0 AND is_cash_sale = 0',
       whereArgs: [transactionId],
     );
+    if (changed == 0) {
+      logInfo('unmarkTranscribed no-op for transaction $transactionId');
+    }
+    return changed;
   }
 
   Future<void> editTransactionItems(
@@ -933,6 +989,24 @@ class DatabaseHelper {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getGroupedOpenTransactions() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT c.id as customer_id, c.name as customer_name,
+        SUM(t.total_amount) as total_amount,
+        SUM(t.paid_amount) as paid_amount,
+        COUNT(t.id) as transaction_count,
+        MIN(t.date) as oldest_date,
+        MAX(t.date) as latest_date
+      FROM transactions t
+      INNER JOIN customers c ON c.id = t.customer_id
+      WHERE t.paid_amount < t.total_amount
+        AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0
+      GROUP BY c.id
+      ORDER BY MIN(t.date) ASC
+    ''');
+  }
+
   Future<List<Map<String, dynamic>>> getGroupedActiveTransactions(
       {bool? transcribedToBook}) async {
     final db = await database;
@@ -966,6 +1040,10 @@ class DatabaseHelper {
     bool isOwnerConsumption = false,
     bool isCashSale = false,
   }) async {
+    if (customerId == null && !isCashSale && !isOwnerConsumption) {
+      throw ArgumentError(
+          'customerId is required for credit sales; set isCashSale or isOwnerConsumption');
+    }
     final db = await database;
     final date = DateTime.now().toIso8601String();
     var totalAmount = 0;
@@ -979,7 +1057,7 @@ class DatabaseHelper {
         'date': date,
         'total_amount': totalAmount,
         'paid_amount': paid,
-        'status': isCashSale ? 'PAID' : 'ACTIVE',
+        'status': paid >= totalAmount ? 'PAID' : 'ACTIVE',
         'is_owner_consumption': isOwnerConsumption ? 1 : 0,
         'is_cash_sale': isCashSale ? 1 : 0,
       });
@@ -1034,20 +1112,28 @@ class DatabaseHelper {
     return (result.first['total'] as num).toInt();
   }
 
-  Future<Map<String, int>> markAllCustomerReceiptsPaid(int customerId) async {
+  Future<Map<String, dynamic>> markAllCustomerReceiptsPaid(
+      int customerId) async {
     final db = await database;
     return await db.transaction((txn) async {
       final rows = await txn.rawQuery('''
-        SELECT id, total_amount, paid_amount, (total_amount - paid_amount) AS remaining
+        SELECT id, total_amount, paid_amount, status,
+          (total_amount - paid_amount) AS remaining
         FROM transactions
         WHERE customer_id = ? AND paid_amount < total_amount
           AND is_owner_consumption = 0 AND is_cash_sale = 0
       ''', [customerId]);
       var collected = 0;
+      final snapshots = <Map<String, dynamic>>[];
       for (final r in rows) {
         final rem = (r['remaining'] as num).toInt();
         final total = (r['total_amount'] as num).toInt();
         collected += rem;
+        snapshots.add({
+          'id': r['id'],
+          'paid_amount': (r['paid_amount'] as num).toInt(),
+          'status': r['status'],
+        });
         await txn.update(
           'transactions',
           {'paid_amount': total, 'status': 'PAID'},
@@ -1055,7 +1141,30 @@ class DatabaseHelper {
           whereArgs: [r['id']],
         );
       }
-      return {'settled': rows.length, 'collected': collected};
+      return {
+        'settled': rows.length,
+        'collected': collected,
+        'snapshots': snapshots,
+      };
+    });
+  }
+
+  Future<void> restorePaymentSnapshots(
+      List<Map<String, dynamic>> snapshots) async {
+    if (snapshots.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final row in snapshots) {
+        await txn.update(
+          'transactions',
+          {
+            'paid_amount': (row['paid_amount'] as num).toInt(),
+            'status': row['status']?.toString() ?? 'ACTIVE',
+          },
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
     });
   }
 

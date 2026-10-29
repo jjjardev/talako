@@ -354,7 +354,7 @@ void main() {
       expect(provider.transcribedTransactions.any((t) => t.id == txnId), isTrue);
       expect(provider.transcribedTransactions.first.transcribedToBook, isTrue);
 
-      await provider.setFilter(CreditBookFilter.all);
+      await provider.setFilter(CreditBookFilter.allOpen);
       expect(provider.activeTransactions.any((t) => t.id == txnId), isTrue);
     });
 
@@ -386,6 +386,172 @@ void main() {
           ['100% Juice']);
       expect(await db.getAllCustomers(search: '_'), isEmpty);
       expect(await db.getAllItems(search: '_'), isEmpty);
+    });
+  });
+
+  group('v2.16 credit semantics', () {
+    test('global outstanding and overdue include transcribed debt', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Global Total Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Global Item', 'quantity': 1, 'price': 4000, 'subtotal': 4000},
+      ]);
+      final before = await db.getAllOutstandingTotal();
+      await db.markTranscribed(txnId);
+      expect(await db.getAllOutstandingTotal(), before,
+          reason: 'transcription must not change global outstanding');
+      expect(await db.getCustomerOutstandingBalance(customerId), 4000);
+
+      final oldDate =
+          DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
+      final oldId = await (await db.database).insert('transactions', {
+        'customer_id': customerId,
+        'date': oldDate,
+        'total_amount': 3000,
+        'paid_amount': 1000,
+        'status': 'ACTIVE',
+        'is_owner_consumption': 0,
+        'is_cash_sale': 0,
+        'transcribed_to_book': 1,
+        'transcribed_at': oldDate,
+      });
+      expect(oldId, greaterThan(0));
+      expect(await db.getAllOverdueTotal(), greaterThanOrEqualTo(2000));
+      expect(await db.getOverdueCountAll(), greaterThanOrEqualTo(1));
+      final overdueIds = await db.getAllOverdueCustomerIds();
+      expect(overdueIds.contains(customerId), isTrue);
+    });
+
+    test('transcribed view includes paid rows and count', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Paid Transcribed Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Paid Book Item', 'quantity': 1, 'price': 2500, 'subtotal': 2500},
+      ]);
+      await db.updateTransactionPayment(txnId, 2500);
+      await db.markTranscribed(txnId);
+      final rows = await db.getTranscribedTransactions();
+      final row = rows.firstWhere((r) => r['id'] == txnId);
+      expect((row['paid_amount'] as num).toInt(), 2500);
+      expect((row['total_amount'] as num).toInt(), 2500);
+      expect(await db.getTranscribedCount(), greaterThanOrEqualTo(1));
+      expect(await db.unmarkTranscribed(txnId), 1,
+          reason: 'paid transcribed rows must be untranscribable');
+    });
+
+    test('transcription guards reject owner-use and cash-sale rows', () async {
+      final db = DatabaseHelper.instance;
+      final ownerId = await db.insertTransactionWithItems(
+        null,
+        [
+          {'item_name': 'Owner Guard', 'quantity': 1, 'price': 100, 'subtotal': 100}
+        ],
+        isOwnerConsumption: true,
+      );
+      final cashId = await db.insertTransactionWithItems(
+        null,
+        [
+          {'item_name': 'Cash Guard', 'quantity': 1, 'price': 100, 'subtotal': 100}
+        ],
+        isCashSale: true,
+      );
+      expect(await db.markTranscribed(ownerId), 0);
+      expect(await db.markTranscribed(cashId), 0);
+      for (final id in [ownerId, cashId]) {
+        final row = (await (await db.database)
+                .query('transactions', where: 'id = ?', whereArgs: [id]))
+            .first;
+        expect(row['transcribed_to_book'], 0);
+      }
+    });
+
+    test('orphan credit insert throws and zero-price rows are allowed',
+        () async {
+      final db = DatabaseHelper.instance;
+      await expectLater(
+        db.insertTransactionWithItems(
+          null,
+          [
+            {'item_name': 'Orphan', 'quantity': 1, 'price': 100, 'subtotal': 100}
+          ],
+        ),
+        throwsArgumentError,
+      );
+
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Zero Price Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Free Sample', 'quantity': 1, 'price': 0, 'subtotal': 0},
+      ]);
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect((row['total_amount'] as num).toInt(), 0);
+      expect((row['paid_amount'] as num).toInt(), 0);
+      expect(row['status'], 'PAID');
+      final lines = await db.getItemsForTransactions([txnId]);
+      expect(lines.single.itemName, 'Free Sample');
+      expect(lines.single.price, 0);
+    });
+
+    test('grouped remaining includes transcribed while count is filtered',
+        () async {
+      final db = DatabaseHelper.instance;
+      final provider = TransactionsProvider();
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Grouped Remaining Customer'));
+      await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Open Item', 'quantity': 1, 'price': 600, 'subtotal': 600},
+      ]);
+      final transcribedId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Book Item', 'quantity': 1, 'price': 400, 'subtotal': 400},
+      ]);
+      await db.markTranscribed(transcribedId);
+
+      await provider.setFilter(CreditBookFilter.active);
+      await provider.loadActiveTransactions();
+      await provider.loadGroupedTransactions();
+      final group = provider.groupedCustomers
+          .firstWhere((g) => g.customerId == customerId);
+      expect(group.remaining, 1000);
+      expect(group.transactionCount, 1);
+
+      final detail =
+          await provider.fetchCustomerTransactions(customerId);
+      expect(detail.fold<int>(0, (sum, t) => sum + t.remaining), 1000);
+    });
+
+    test('bulk settlement restores prior payment state from snapshots',
+        () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Bulk Undo Customer'));
+      final a = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Bulk A', 'quantity': 1, 'price': 1000, 'subtotal': 1000},
+      ]);
+      final b = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Bulk B', 'quantity': 1, 'price': 2000, 'subtotal': 2000},
+      ]);
+      await db.updateTransactionPayment(a, 300);
+      final result = await db.markAllCustomerReceiptsPaid(customerId);
+      expect(result['settled'], 2);
+      expect(result['collected'], 2700);
+      await db.restorePaymentSnapshots(
+          (result['snapshots'] as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList());
+      final rowA = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [a]))
+          .first;
+      final rowB = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [b]))
+          .first;
+      expect((rowA['paid_amount'] as num).toInt(), 300);
+      expect(rowA['status'], 'ACTIVE');
+      expect((rowB['paid_amount'] as num).toInt(), 0);
+      expect(rowB['status'], 'ACTIVE');
     });
   });
 

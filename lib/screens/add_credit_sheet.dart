@@ -88,9 +88,17 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
       return;
     }
 
-    final validItems = _items.where((i) => i.itemName.trim().isNotEmpty && i.price > 0).toList();
+    if (_items.any((i) => i.itemName.trim().isNotEmpty && i.price < 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Price cannot be negative')));
+      return;
+    }
+    final validItems = _items
+        .where((i) => i.itemName.trim().isNotEmpty && i.price >= 0)
+        .toList();
     if (validItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add at least one item')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add at least one item')));
       return;
     }
 
@@ -380,12 +388,16 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                 Expanded(
                   child: TextFormField(
                     controller: item.priceController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Price (₱)',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 10),
                       prefixText: '₱ ',
+                      errorText: item.price < 0
+                          ? 'Price cannot be negative'
+                          : null,
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     onChanged: (v) {
