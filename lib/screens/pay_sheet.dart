@@ -39,8 +39,14 @@ class _PaySheetState extends State<PaySheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
@@ -149,6 +155,7 @@ class _PaySheetState extends State<PaySheet> {
           const SizedBox(height: 12),
           _buildNumpad(),
         ],
+      ),
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'package:talako/models/customer.dart';
 import 'package:talako/models/item.dart';
 import 'package:talako/models/spoilage_entry.dart';
 import 'package:talako/providers/transactions_provider.dart';
+import 'package:talako/utils/backup_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -273,6 +274,121 @@ void main() {
     });
   });
 
+  group('physical book transcription', () {
+    test('mark and unmark preserve debt and are idempotent', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Book Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Book Item', 'quantity': 1, 'price': 5000, 'subtotal': 5000},
+      ]);
+
+      await db.markTranscribed(txnId);
+      var row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['transcribed_to_book'], 1);
+      expect(row['transcribed_at'], isNotNull);
+      final firstStamp = row['transcribed_at'];
+      await db.markTranscribed(txnId);
+      row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['transcribed_at'], firstStamp,
+          reason: 'marking twice is a no-op');
+
+      final active = await db.getActiveTransactionsWithCustomer(
+          transcribedToBook: false);
+      expect(active.any((r) => r['id'] == txnId), isFalse);
+      final transcribed = await db.getActiveTransactionsWithCustomer(
+          transcribedToBook: true);
+      expect(transcribed.any((r) => r['id'] == txnId), isTrue);
+      expect(await db.getCustomerOutstandingBalance(customerId), 5000);
+
+      await db.unmarkTranscribed(txnId);
+      row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['transcribed_to_book'], 0);
+      expect(row['transcribed_at'], isNull);
+    });
+
+    test('editing items clears transcription and clamps paid', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Edit Book Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Edit Item', 'quantity': 1, 'price': 5000, 'subtotal': 5000},
+      ]);
+      await db.updateTransactionPayment(txnId, 4000);
+      await db.markTranscribed(txnId);
+
+      await db.editTransactionItems(txnId, [
+        {'item_name': 'Edit Item', 'quantity': 1, 'price': 3000, 'subtotal': 3000},
+      ]);
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['transcribed_to_book'], 0);
+      expect(row['transcribed_at'], isNull);
+      expect((row['total_amount'] as num).toInt(), 3000);
+      expect((row['paid_amount'] as num).toInt(), 3000);
+      expect(row['status'], 'PAID');
+    });
+
+    test('provider filters active, transcribed, and all', () async {
+      final db = DatabaseHelper.instance;
+      final provider = TransactionsProvider();
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Filter Customer'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Filter Item', 'quantity': 1, 'price': 900, 'subtotal': 900},
+      ]);
+      await db.markTranscribed(txnId);
+
+      await provider.loadActiveTransactions();
+      expect(provider.activeTransactions.any((t) => t.id == txnId), isFalse);
+      expect(provider.transcribedCount, greaterThanOrEqualTo(1));
+
+      await provider.setFilter(CreditBookFilter.transcribed);
+      expect(provider.transcribedTransactions.any((t) => t.id == txnId), isTrue);
+      expect(provider.transcribedTransactions.first.transcribedToBook, isTrue);
+
+      await provider.setFilter(CreditBookFilter.all);
+      expect(provider.activeTransactions.any((t) => t.id == txnId), isTrue);
+    });
+
+    test('customer sorting and LIKE escaping', () async {
+      final db = DatabaseHelper.instance;
+      await db.importBackup({
+        'app': 'TalaKo',
+        'version': 8,
+        'items': [
+          {'id': 901, 'name': 'Zebra', 'price': 100, 'created_at': '2026-01-01'},
+          {'id': 902, 'name': 'apple', 'price': 100, 'created_at': '2026-01-01'},
+          {'id': 903, 'name': '100% Juice', 'price': 100, 'created_at': '2026-01-01'},
+        ],
+        'customers': [
+          {'id': 901, 'name': 'Zebra', 'created_at': '2026-01-01'},
+          {'id': 902, 'name': 'apple', 'created_at': '2026-01-01'},
+          {'id': 903, 'name': '100% Customer', 'created_at': '2026-01-01'},
+        ],
+        'transactions': [],
+        'transaction_items': [],
+        'spoilage_log': [],
+      });
+      final customers = await db.getAllCustomers();
+      expect(customers.indexWhere((c) => c.name == 'apple'),
+          lessThan(customers.indexWhere((c) => c.name == 'Zebra')));
+      expect((await db.getAllCustomers(search: '%')).map((c) => c.name).toList(),
+          ['100% Customer']);
+      expect((await db.getAllItems(search: '%')).map((i) => i.name).toList(),
+          ['100% Juice']);
+      expect(await db.getAllCustomers(search: '_'), isEmpty);
+      expect(await db.getAllItems(search: '_'), isEmpty);
+    });
+  });
+
   group('legacy Sari v1 backup import', () {
     test('credits become minor-unit transactions; app name Sari accepted',
         () async {
@@ -366,7 +482,7 @@ void main() {
 
       final exported = await db.exportBackup();
       expect(exported, isNotNull);
-      expect(exported!['version'], 7);
+      expect(exported!['version'], 8);
       expect(exported['record_counts'], isA<Map>());
       expect(exported['checksum'], isA<String>());
       expect((exported['items'] as List).any((i) =>
@@ -374,7 +490,7 @@ void main() {
 
       await db.importBackup({
         'app': 'TalaKo',
-        'version': 7,
+        'version': 8,
         'items': [],
         'customers': [],
         'transactions': [],
@@ -395,13 +511,80 @@ void main() {
       expect((await db.getItemsForTransactions([txnId])).first.quantity, 2);
     });
 
+    test('v7 backup imports with transcription defaults', () async {
+      final db = DatabaseHelper.instance;
+      await db.importBackup({
+        'app': 'TalaKo',
+        'version': 7,
+        'items': [],
+        'customers': [
+          {'id': 801, 'name': 'V7 Customer', 'created_at': '2026-01-01'},
+        ],
+        'transactions': [
+          {
+            'id': 801,
+            'customer_id': 801,
+            'date': '2026-01-02T00:00:00',
+            'total_amount': 2500,
+            'paid_amount': 0,
+            'status': 'ACTIVE',
+            'is_owner_consumption': 0,
+            'is_cash_sale': 0,
+          }
+        ],
+        'transaction_items': [
+          {
+            'id': 801,
+            'transaction_id': 801,
+            'item_name': 'V7 Item',
+            'quantity': 1,
+            'price': 2500,
+            'subtotal': 2500,
+          }
+        ],
+        'spoilage_log': [],
+      });
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [801]))
+          .first;
+      expect(row['transcribed_to_book'], 0);
+      expect(row['transcribed_at'], isNull);
+      expect((row['total_amount'] as num).toInt(), 2500,
+          reason: 'v7 money must not be converted twice');
+    });
+
+    test('v8 export round-trips transcription state', () async {
+      final db = DatabaseHelper.instance;
+      final customerId =
+          await db.insertCustomer(Customer(name: 'Round Trip Book'));
+      final txnId = await db.insertTransactionWithItems(customerId, [
+        {'item_name': 'Book RT', 'quantity': 1, 'price': 1200, 'subtotal': 1200},
+      ]);
+      await db.markTranscribed(txnId);
+      final exported = await db.exportBackup();
+      await db.importBackup(exported!);
+      final row = (await (await db.database)
+              .query('transactions', where: 'id = ?', whereArgs: [txnId]))
+          .first;
+      expect(row['transcribed_to_book'], 1);
+      expect(row['transcribed_at'], isNotNull);
+    });
+
+    test('backup filenames share the timestamp pattern', () {
+      final at = DateTime(2026, 10, 29, 7, 5);
+      expect(BackupService.buildBackupFileName(at, 'json'),
+          'talako_backup_20261029_0705.json');
+      expect(BackupService.buildBackupFileName(at, '.db'),
+          'talako_backup_20261029_0705.db');
+    });
+
     test('import rejects newer schema and count mismatch before wiping',
         () async {
       final db = DatabaseHelper.instance;
       final beforeTxn = await (await db.database).query('transactions');
 
       await expectLater(
-        db.importBackup({'app': 'TalaKo', 'version': 8}),
+        db.importBackup({'app': 'TalaKo', 'version': 9}),
         throwsException,
       );
       await expectLater(

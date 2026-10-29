@@ -11,6 +11,7 @@ void main() {
 
   test('formatCurrency renders minor units exactly', () {
     expect(formatCurrency(30).replaceAll(RegExp(r'[^0-9.]'), ''), endsWith('0.30'));
+    expect(formatCurrency(1200).replaceAll(RegExp(r'[^0-9.]'), ''), '12.00');
   });
 
   test('formatDate renders full timestamp', () {

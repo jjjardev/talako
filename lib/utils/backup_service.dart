@@ -17,13 +17,16 @@ class BackupService {
     return '${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}';
   }
 
+  static String buildBackupFileName(DateTime now, String extension) =>
+      'talako_backup_${_stamp(now)}.${extension.replaceFirst('.', '')}';
+
   static Future<File> exportJsonBackup() async {
     final data = await DatabaseHelper.instance.exportBackup();
     if (data == null) throw Exception('No data to export');
     final jsonString = const JsonEncoder.withIndent('  ').convert(data);
     final dir = await getApplicationDocumentsDirectory();
-    final file =
-        File('${dir.path}/talako_backup_${_stamp(DateTime.now())}.json');
+    final file = File(
+        '${dir.path}/${buildBackupFileName(DateTime.now(), 'json')}');
     await file.writeAsString(jsonString);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastBackupKey, DateTime.now().toIso8601String());
@@ -36,8 +39,8 @@ class BackupService {
     if (!await src.exists()) throw Exception('No database file found');
     await helper.checkpoint();
     final dir = await getApplicationDocumentsDirectory();
-    final dest =
-        File('${dir.path}/talako_backup_${DateTime.now().millisecondsSinceEpoch}.db');
+    final dest = File(
+        '${dir.path}/${buildBackupFileName(DateTime.now(), 'db')}');
     await src.copy(dest.path);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastBackupKey, DateTime.now().toIso8601String());

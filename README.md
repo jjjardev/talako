@@ -2,15 +2,15 @@
 
 > **Track debts. Never lose a notebook again.** — Offline-first, no internet, no account.
 
-[![Version](https://img.shields.io/badge/version-2.14.0%2B1-teal)](https://github.com/jjjardev/talako/releases/tag/v2.14.0)
-[![Schema](https://img.shields.io/badge/schema-v7-blue)](https://github.com/jjjardev/talako/blob/main/lib/database/database_helper.dart)
-[![Tests](https://img.shields.io/badge/tests-44%20passed-brightgreen)](https://github.com/jjjardev/talako/actions)
+[![Version](https://img.shields.io/badge/version-2.15.0%2B1-teal)](https://github.com/jjjardev/talako/releases/tag/v2.15.0)
+[![Schema](https://img.shields.io/badge/schema-v8-blue)](https://github.com/jjjardev/talako/blob/main/lib/database/database_helper.dart)
+[![Tests](https://img.shields.io/badge/tests-52%20passed-brightgreen)](https://github.com/jjjardev/talako/actions)
 [![License](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Android%205.0%2B-green)]()
 
 **TalaKo** is an **offline-first** Android app for small store owners who sell on credit. No internet needed. No account required. Your data stays on your phone.
 
-[📥 Download Latest APK (v2.14.0)](https://github.com/jjjardev/talako/releases/tag/v2.14.0) • [📖 Full Documentation](DOCUMENTATION.md) • [📋 Changelog](DOCUMENTATION.md#15-changelog-summary) • [💡 Pitch Guide](PITCH.md)
+[📥 Download Latest APK (v2.15.0)](https://github.com/jjjardev/talako/releases/tag/v2.15.0) • [📖 Full Documentation](DOCUMENTATION.md) • [📋 Changelog](DOCUMENTATION.md#15-changelog-summary) • [💡 Pitch Guide](PITCH.md)
 
 ---
 
@@ -29,8 +29,8 @@
 
 | Area | Highlights |
 |------|------------|
-| **🧾 Credit Book** | Swipe right → `Fully paid` with **Undo** · Oldest-first, full item breakdown (`name · qty × price · subtotal`) · Red `14+ days` / Orange `7+ days` / Grey recent · Overdue warning chip · Search by name · Group by customer toggle |
-| **➕ Credit Recording** | `+` with multiple items · Customer optional · **Already paid** cash-sale toggle · Autocomplete for items · Quantity steppers + inline price, integer-centavo total · `Undo` Snackbar after save |
+| **🧾 Credit Book** | Swipe right → `Fully paid` with **Undo** · Oldest-first, full item breakdown (`name · qty × price · subtotal`) · Red `14+ days` / Orange `7+ days` / Grey recent · Overdue warning chip · Search by name · Group by customer toggle · **All / Active / Transcribed** filters · long-press to mark or unmark a receipt as written in the physical book, with Undo and an “in book” badge |
+| **➕ Credit Recording** | `+` with multiple items · Customer required unless **Already paid** cash-sale toggle · Autocomplete for items · Quantity steppers + inline price, integer-centavo total · `Undo` Snackbar after save |
 | **💳 Payments** | Numpad (2-decimal, backspace) · Partial payments · Receipt-based (whole transaction) · Overpayment rejected · Full-payment detection + `Undo` to reverse |
 | **📦 Stock Watch (Shelf)** | **Macro only — no counting, ever.** `Well Stocked → Running Low → Out of Stock` **tap to cycle** ( `Cold / Archive` is **long-press only**, hidden from Shopping) · Cards show **price** (if Retail/Both), **status `• today / • Nd ago`**, usage icon · Filter chips `All · Low/Out · Archived` with Retail/Ingredients in the overflow filter · **A–Z / Urgent** sort (choice persists, A–Z strip always visible) · **Long-press → Quick Actions** (set status, `Restocked`, `Archive`, `Log loss / spoilage`) → **Edit details** (rename, price, notes, `Retail / Ingredient / Both` — renaming never rewrites past receipts) · `Tap to cycle` hint + **Undo** |
 | **🛒 Shopping List** | Auto-built from `Running Low / Out of Stock` (Out first, then Low) · **Check off** as bought (→ `Well Stocked`) or **`Restock all (n)`** in one tap · **Share** via system sheet — `SHOPPING LIST — MMM dd, yyyy (n items)` per-line `- Name — ₱ price (label)` (count-only, no qty) |
@@ -55,7 +55,7 @@
 | Step | Action | Tip |
 |------|--------|-----|
 | **1. Install** | Download `app-release.apk` from [Releases](https://github.com/jjjardev/talako/releases) → Install | Allow *Install unknown apps* once |
-| **2. First launch** | Swipe the 6-page onboarding → `Skip` or `Get Started` | Covers Credit Book, Stock, Shopping, Payments |
+| **2. First launch** | Swipe the 4-page onboarding → `Skip` or `Get Started` | Covers Credit Book, Stock, Shopping, Payments |
 | **3. Add items to Shelf** | `Stock` tab → `+` → name, price, `Retail / Ingredient / Both`, initial `Well/Low/Out` | Sort `Urgent` to see `Out` first |
 | **4. Add a credit** | `Credit Book` → `+` → customer + items (qty × price) → `Save` → `Undo` if needed | Autocomplete merges recent + catalog names |
 | **5. Track debts** | Credit Book shows **overdue total** (`red`) + tiles `Today / Nd ago — MMM dd, yyyy h:mm a (Overdue!)` | Search or toggle **Group by customer** |
@@ -84,14 +84,14 @@ Any micro-business extending credit where a paper notebook is the current system
 
 | Detail | Value |
 |--------|-------|
-| **Platform** | Android (offline-first) |
+| **Platform** | Android (offline-first, API 24+) |
 | **Framework** | Flutter 3.x (Dart `^3.11.5`) |
-| **Database** | SQLite (`sqflite`), **schema v7** (`migrations v1→v7`) |
+| **Database** | SQLite (`sqflite`), **schema v8** (`migrations v1→v8`) |
 | **State** | `Provider` (`ChangeNotifier`) — `CustomersProvider`, `TransactionsProvider`, `InventoryProvider`, `ThemeProvider` |
-| **APK size** | **~52 MB** (measured `v2.14.0` `assembleRelease`) |
-| **Min SDK** | Android 5.0 (API 21) |
+| **APK size** | **~58 MB** (measured `v2.14.0` `assembleRelease`) |
+| **Min SDK** | Android 7.0 (API 24, verified from packaged APK) |
 | **Internet** | **Not required** — no `INTERNET` permission |
-| **Tests** | **44** automated (`database` 19 · `inventory` 13 · `migration` 1 · `money` 4 · `format` 4 · `snackbars` 3) |
+| **Tests** | **52** automated (`database` 26 · `inventory` 13 · `migration` 2 · `money` 4 · `format` 4 · `snackbars` 3) |
 | **License** | Apache 2.0 |
 
 ---
@@ -104,7 +104,7 @@ Any micro-business extending credit where a paper notebook is the current system
 ```text
 lib/
 ├── main.dart                      # App entry + prefs preload, providers, routing
-├── database/database_helper.dart  # SQLite singleton (schema v7, migrations v1→v7, backup)
+├── database/database_helper.dart  # SQLite singleton (schema v8, migrations v1→v8, backup)
 ├── models/
 │   ├── customer.dart
 │   ├── customer_summary.dart
@@ -159,11 +159,11 @@ test/
 
 ```bash
 flutter pub get
-flutter test        # 44 tests
+flutter test        # 52 tests
 flutter build apk --release
 ```
 
-APK output: `build/app/outputs/flutter-apk/app-release.apk` (~52 MB)
+APK output: `build/app/outputs/flutter-apk/app-release.apk` (~58 MB)
 
 ---
 

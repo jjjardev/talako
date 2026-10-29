@@ -64,7 +64,8 @@ class _AddItemSheetState extends State<AddItemSheet> {
         right: 16,
         top: 16,
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -113,7 +114,8 @@ class _AddItemSheetState extends State<AddItemSheet> {
                 child: GestureDetector(
                   onTap: () => setState(() => _stockStatus = _stockStatus.next()),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    constraints: const BoxConstraints(minHeight: 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     decoration: BoxDecoration(
                       color: _stockStatus.color.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
@@ -152,6 +154,7 @@ class _AddItemSheetState extends State<AddItemSheet> {
           ),
           const SizedBox(height: 16),
         ],
+      ),
       ),
     );
   }

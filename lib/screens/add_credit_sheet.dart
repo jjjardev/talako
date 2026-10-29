@@ -50,7 +50,7 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
     });
   }
 
-  /// Exact, case-insensitive match against dishes first, then catalog items.
+  /// Exact, case-insensitive match against catalog items.
   void _autofillPrice(_LineItem line, String rawName) {
     if (line.priceTouched) return;
     final key = rawName.trim().toLowerCase();
@@ -214,7 +214,15 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Already paid'),
+              subtitle: const Text('Cash sale - does not appear in the Credit Book'),
+              value: _cashSale,
+              onChanged: (v) => setState(() => _cashSale = v),
+            ),
+            const SizedBox(height: 8),
             Autocomplete<String>(
               optionsBuilder: (textEditingValue) {
                 if (textEditingValue.text.isEmpty) return [];
@@ -228,10 +236,11 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
                 return TextFormField(
                   controller: controller,
                   focusNode: focusNode,
-                  decoration: const InputDecoration(
-                    labelText: 'Customer Name (optional)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person),
+                  decoration: InputDecoration(
+                    labelText:
+                        'Customer Name (${_cashSale ? 'optional' : 'required'})',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.person),
                   ),
                   onChanged: (v) => _customerController.text = v,
                 );
@@ -239,13 +248,6 @@ class _AddCreditSheetState extends State<AddCreditSheet> {
               onSelected: (v) {
                 _customerController.text = v;
               },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Already paid'),
-              subtitle: const Text('Cash sale - does not appear in the Credit Book'),
-              value: _cashSale,
-              onChanged: (v) => setState(() => _cashSale = v),
             ),
             const SizedBox(height: 4),
             const Text('Items', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),

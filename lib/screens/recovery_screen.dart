@@ -43,6 +43,23 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   }
 
   Future<void> _restore() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore database?'),
+        content: const Text(
+            'The current file will be replaced by the selected .db backup.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     final error = await BackupService.pickAndRestoreRawDb();
     if (!mounted) return;

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import 'package:path/path.dart';
 
@@ -15,7 +16,7 @@ import '../utils/money.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static String databaseName = 'talako.db';
-  static const int schemaVersion = 7;
+  static const int schemaVersion = 8;
 
   Database? _database;
   Future<void>? _initFuture;
@@ -159,6 +160,8 @@ class DatabaseHelper {
         status TEXT NOT NULL DEFAULT 'ACTIVE',
         is_owner_consumption INTEGER NOT NULL DEFAULT 0,
         is_cash_sale INTEGER NOT NULL DEFAULT 0,
+        transcribed_to_book INTEGER NOT NULL DEFAULT 0,
+        transcribed_at TEXT,
         FOREIGN KEY (customer_id) REFERENCES customers(id)
       )
     ''');
@@ -306,27 +309,42 @@ class DatabaseHelper {
     if (oldVersion < 6) {
       await _createIndexes(db);
     }
-    if (oldVersion < schemaVersion) {
+    if (oldVersion < 7) {
       await _migrateToV7(db);
+    }
+    if (oldVersion < 8) {
+      await _migrateToV8(db);
     }
   }
 
-  Future<void> _backupBeforeV7(Database db) async {
+  Future<void> _backupBeforeVersion(Database db, int targetVersion) async {
     try {
       final source = File(db.path);
       if (!await source.exists()) return;
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      final target = '${db.path}.pre_v7_$stamp.db';
+      final target = '${db.path}.pre_v${targetVersion}_$stamp.db';
       await source.copy(target);
-      logInfo('Pre-v7 backup written to $target');
+      logInfo('Pre-v$targetVersion backup written to $target');
     } catch (e, s) {
-      logError('pre-v7-backup', e, s);
+      logError('pre-v$targetVersion-backup', e, s);
       rethrow;
     }
   }
 
+  Future<void> _migrateToV8(Database db) async {
+    await _backupBeforeVersion(db, 8);
+    await _ensureColumn(
+        db, 'transactions', 'transcribed_to_book', 'INTEGER NOT NULL DEFAULT 0');
+    await _ensureColumn(db, 'transactions', 'transcribed_at', 'TEXT');
+    await _createIndexes(db);
+    final check = await db.rawQuery('PRAGMA integrity_check');
+    if (check.isEmpty || check.first.values.first != 'ok') {
+      throw Exception('Migration integrity check failed: $check');
+    }
+  }
+
   Future<void> _migrateToV7(Database db) async {
-    await _backupBeforeV7(db);
+    await _backupBeforeVersion(db, 7);
 
     final duplicates = await db.rawQuery('''
       SELECT LOWER(TRIM(name)) AS norm, GROUP_CONCAT(name, ' | ') AS names
@@ -440,6 +458,11 @@ class DatabaseHelper {
         'CREATE INDEX IF NOT EXISTS idx_txn_cash_day ON transactions(is_cash_sale, date)');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_txn_customer ON transactions(customer_id)');
+    final cols = await db.rawQuery('PRAGMA table_info(transactions)');
+    if (cols.any((c) => c['name'] == 'transcribed_to_book')) {
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_txn_transcribed ON transactions(transcribed_to_book, date)');
+    }
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(LOWER(TRIM(name)))');
   }
@@ -476,6 +499,11 @@ class DatabaseHelper {
 
   // ─── Items ──────────────────────────────────────────────────────────
 
+  String _escapeLike(String term) => term
+      .replaceAll('\\', '\\\\')
+      .replaceAll('%', '\\%')
+      .replaceAll('_', '\\_');
+
   Future<int> insertItem(Item item) async {
     final db = await database;
     return await db.insert('items', item.toMap());
@@ -487,8 +515,8 @@ class DatabaseHelper {
     String? where;
     List<dynamic>? whereArgs;
     if (search != null && search.isNotEmpty) {
-      where = 'name LIKE ?';
-      whereArgs = ['%$search%'];
+      where = "name LIKE ? ESCAPE '\\'";
+      whereArgs = ['%${_escapeLike(search)}%'];
     }
     final result = await db.query(
       'items',
@@ -505,6 +533,7 @@ class DatabaseHelper {
         where: 'id = ?', whereArgs: [item.id]);
   }
 
+  @visibleForTesting
   Future<int> deleteItem(int id) async {
     final db = await database;
     return await db.transaction((txn) async {
@@ -595,14 +624,14 @@ class DatabaseHelper {
     String? where;
     List<dynamic>? whereArgs;
     if (search != null && search.isNotEmpty) {
-      where = 'name LIKE ?';
-      whereArgs = ['%$search%'];
+      where = "name LIKE ? ESCAPE '\\'";
+      whereArgs = ['%${_escapeLike(search)}%'];
     }
     final result = await db.query(
       'customers',
       where: where,
       whereArgs: whereArgs,
-      orderBy: 'name ASC',
+      orderBy: 'name COLLATE NOCASE ASC',
     );
     return result.map((map) => Customer.fromMap(map)).toList();
   }
@@ -738,8 +767,11 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer(
-      {int? customerId}) async {
+  Future<List<Map<String, dynamic>>> getActiveTransactionsWithCustomer({
+    int? customerId,
+    bool? transcribedToBook,
+    bool newestFirst = false,
+  }) async {
     final db = await database;
     String where =
         'WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0';
@@ -748,13 +780,91 @@ class DatabaseHelper {
       where += ' AND t.customer_id = ?';
       args.add(customerId);
     }
+    if (transcribedToBook != null) {
+      where += ' AND t.transcribed_to_book = ?';
+      args.add(transcribedToBook ? 1 : 0);
+    }
     return await db.rawQuery('''
       SELECT t.*, c.name as customer_name
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
       $where
-      ORDER BY t.date ASC
+      ORDER BY t.date ${newestFirst ? 'DESC' : 'ASC'}
     ''', args);
+  }
+
+  Future<int> getTranscribedActiveCount() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT COUNT(*) AS cnt FROM transactions
+      WHERE paid_amount < total_amount AND is_owner_consumption = 0
+        AND is_cash_sale = 0 AND transcribed_to_book = 1
+    ''');
+    return (rows.first['cnt'] as num).toInt();
+  }
+
+  Future<int> markTranscribed(int transactionId) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      {
+        'transcribed_to_book': 1,
+        'transcribed_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ? AND transcribed_to_book = 0',
+      whereArgs: [transactionId],
+    );
+  }
+
+  Future<int> unmarkTranscribed(int transactionId) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      {'transcribed_to_book': 0, 'transcribed_at': null},
+      where: 'id = ? AND transcribed_to_book = 1',
+      whereArgs: [transactionId],
+    );
+  }
+
+  Future<void> editTransactionItems(
+      int transactionId, List<Map<String, dynamic>> items) async {
+    final db = await database;
+    var total = 0;
+    for (final item in items) {
+      total += (item['subtotal'] as num).toInt();
+    }
+    await db.transaction((txn) async {
+      final row = await txn.query('transactions',
+          where: 'id = ?', whereArgs: [transactionId]);
+      if (row.isEmpty) return;
+      final paid = clampMinor(
+          (row.first['paid_amount'] as num).toInt(), 0, total);
+      await txn.update(
+        'transactions',
+        {
+          'total_amount': total,
+          'paid_amount': paid,
+          'status': paid >= total ? 'PAID' : 'ACTIVE',
+          'transcribed_to_book': 0,
+          'transcribed_at': null,
+        },
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
+      await txn.delete('transaction_items',
+          where: 'transaction_id = ?', whereArgs: [transactionId]);
+      for (final item in items) {
+        final itemId = await _resolveItemId(txn, item['item_name'] as String);
+        await txn.insert('transaction_items', {
+          'transaction_id': transactionId,
+          'item_id': itemId,
+          'item_name': item['item_name'],
+          'quantity': (item['quantity'] as num).toInt(),
+          'price': (item['price'] as num).toInt(),
+          'subtotal': (item['subtotal'] as num).toInt(),
+        });
+      }
+    });
   }
 
   Future<List<TransactionItem>> getItemsForTransactions(
@@ -823,8 +933,16 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getGroupedActiveTransactions() async {
+  Future<List<Map<String, dynamic>>> getGroupedActiveTransactions(
+      {bool? transcribedToBook}) async {
     final db = await database;
+    var where =
+        'WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0';
+    final args = <dynamic>[];
+    if (transcribedToBook != null) {
+      where += ' AND t.transcribed_to_book = ?';
+      args.add(transcribedToBook ? 1 : 0);
+    }
     return await db.rawQuery('''
       SELECT c.id as customer_id, c.name as customer_name,
         SUM(t.total_amount) as total_amount,
@@ -834,10 +952,10 @@ class DatabaseHelper {
         MAX(t.date) as latest_date
       FROM transactions t
       INNER JOIN customers c ON c.id = t.customer_id
-      WHERE t.paid_amount < t.total_amount AND t.is_owner_consumption = 0 AND t.is_cash_sale = 0
+      $where
       GROUP BY c.id
       ORDER BY MIN(t.date) ASC
-    ''');
+    ''', args);
   }
 
   // ─── Transactions with items (atomic) ───────────────────────────────
@@ -1133,7 +1251,7 @@ class DatabaseHelper {
       }
     }
 
-    final legacyUnits = version < schemaVersion;
+    final legacyUnits = version < 7;
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete('dish_leftovers');
@@ -1269,6 +1387,9 @@ class DatabaseHelper {
       'status': paidMinor >= totalMinor ? 'PAID' : 'ACTIVE',
       'is_owner_consumption': (map['is_owner_consumption'] as num? ?? 0).toInt(),
       'is_cash_sale': (map['is_cash_sale'] as num? ?? 0).toInt(),
+      'transcribed_to_book':
+          (map['transcribed_to_book'] as num? ?? 0).toInt(),
+      'transcribed_at': map['transcribed_at'],
     };
   }
 

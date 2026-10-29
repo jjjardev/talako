@@ -3,6 +3,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../utils/app_logger.dart';
 
+enum CreditBookFilter { all, active, transcribed }
+
+extension CreditBookFilterX on CreditBookFilter {
+  String get label => switch (this) {
+        CreditBookFilter.all => 'All',
+        CreditBookFilter.active => 'Active',
+        CreditBookFilter.transcribed => 'Transcribed',
+      };
+}
+
 class TransactionItemLine {
   final String itemName;
   final int quantity;
@@ -25,6 +35,8 @@ class ActiveTransaction {
   final int totalAmount;
   final int paidAmount;
   final List<TransactionItemLine> items;
+  final bool transcribedToBook;
+  final String? transcribedAt;
 
   ActiveTransaction({
     required this.id,
@@ -34,6 +46,8 @@ class ActiveTransaction {
     required this.totalAmount,
     required this.paidAmount,
     this.items = const [],
+    this.transcribedToBook = false,
+    this.transcribedAt,
   });
 
   int get remaining => totalAmount - paidAmount;
@@ -64,8 +78,11 @@ class GroupedCustomer {
 class TransactionsProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper.instance;
   List<ActiveTransaction> _activeTransactions = [];
+  List<ActiveTransaction> _transcribedTransactions = [];
   List<GroupedCustomer> _groupedCustomers = [];
   bool _isGrouped = false;
+  CreditBookFilter _filter = CreditBookFilter.active;
+  int _transcribedCount = 0;
 
   TransactionsProvider() {
     SharedPreferences.getInstance().then((p) {
@@ -78,8 +95,20 @@ class TransactionsProvider extends ChangeNotifier {
   }
 
   List<ActiveTransaction> get activeTransactions => _activeTransactions;
+  List<ActiveTransaction> get transcribedTransactions => _transcribedTransactions;
   List<GroupedCustomer> get groupedCustomers => _groupedCustomers;
   bool get isGrouped => _isGrouped;
+  CreditBookFilter get filter => _filter;
+  int get transcribedCount => _transcribedCount;
+
+  Future<void> setFilter(CreditBookFilter filter) async {
+    if (_filter == filter) return;
+    _filter = filter;
+    await loadActiveTransactions();
+    if (_isGrouped && filter != CreditBookFilter.transcribed) {
+      await loadGroupedTransactions();
+    }
+  }
 
   void toggleGrouped() => setGrouped(!_isGrouped);
 
@@ -150,17 +179,38 @@ class TransactionsProvider extends ChangeNotifier {
         totalAmount: (r['total_amount'] as num).toInt(),
         paidAmount: (r['paid_amount'] as num).toInt(),
         items: itemsByTxn[r['id']] ?? const [],
+        transcribedToBook: (r['transcribed_to_book'] as num? ?? 0) == 1,
+        transcribedAt: r['transcribed_at'] as String?,
       );
     }).toList();
   }
 
   Future<void> loadActiveTransactions() async {
     try {
-      final rows = await _db.getActiveTransactionsWithCustomer();
+      final transcribedFlag = switch (_filter) {
+        CreditBookFilter.active => false,
+        CreditBookFilter.all => null,
+        CreditBookFilter.transcribed => true,
+      };
+      final rows = await _db.getActiveTransactionsWithCustomer(
+        transcribedToBook: transcribedFlag,
+      );
       _activeTransactions = await _buildActiveTransactions(rows);
+      if (_filter == CreditBookFilter.transcribed) {
+        _transcribedTransactions = _activeTransactions;
+      } else {
+        _transcribedTransactions = await _buildActiveTransactions(
+          await _db.getActiveTransactionsWithCustomer(
+            transcribedToBook: true,
+            newestFirst: true,
+          ),
+        );
+      }
+      _transcribedCount = await _db.getTranscribedActiveCount();
     } catch (e, s) {
       logError('load-active-transactions', e, s);
       _activeTransactions = [];
+      _transcribedTransactions = [];
     }
     notifyListeners();
   }
@@ -179,7 +229,13 @@ class TransactionsProvider extends ChangeNotifier {
 
   Future<void> loadGroupedTransactions() async {
     try {
-      final rows = await _db.getGroupedActiveTransactions();
+      final rows = await _db.getGroupedActiveTransactions(
+        transcribedToBook: switch (_filter) {
+          CreditBookFilter.active => false,
+          CreditBookFilter.all => null,
+          CreditBookFilter.transcribed => true,
+        },
+      );
       _groupedCustomers = rows
           .map((r) => GroupedCustomer(
                 customerId: r['customer_id'] as int,
@@ -228,6 +284,34 @@ class TransactionsProvider extends ChangeNotifier {
     );
     await _refreshAfterMutation();
     return txnId;
+  }
+
+  Future<void> markTranscribed(int transactionId) async {
+    try {
+      await _db.markTranscribed(transactionId);
+    } catch (e, s) {
+      logError('mark-transcribed', e, s);
+    }
+    await _refreshAfterMutation();
+  }
+
+  Future<void> unmarkTranscribed(int transactionId) async {
+    try {
+      await _db.unmarkTranscribed(transactionId);
+    } catch (e, s) {
+      logError('unmark-transcribed', e, s);
+    }
+    await _refreshAfterMutation();
+  }
+
+  Future<void> editTransactionItems(
+      int transactionId, List<Map<String, dynamic>> items) async {
+    try {
+      await _db.editTransactionItems(transactionId, items);
+    } catch (e, s) {
+      logError('edit-transaction', e, s);
+    }
+    await _refreshAfterMutation();
   }
 
   Future<void> processPayment(int transactionId, int amount) async {

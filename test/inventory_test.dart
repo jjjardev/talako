@@ -296,7 +296,7 @@ void main() {
         estimatedValue: 900,
         date: DateTime.now().toIso8601String(),
       ));
-      await inv.deleteItem(id);
+      await db.deleteItem(id);
       expect((await db.getAllItems()).any((i) => i.id == id), isFalse);
       final log = await db.getSpoilageLog();
       expect(log.every((e) => e.itemId != id), isTrue);

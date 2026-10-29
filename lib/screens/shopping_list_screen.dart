@@ -27,6 +27,14 @@ class ShoppingListScreen extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
             ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh shelf'),
+              onPressed: () =>
+                  context.read<InventoryProvider>().loadInventory(),
+            ),
           ],
         ),
       );

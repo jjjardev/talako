@@ -15,12 +15,12 @@ void main() {
   setUpAll(() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    DatabaseHelper.databaseName = 'talako_migration_v7_test.db';
+    DatabaseHelper.databaseName = 'talako_migration_v8_test.db';
     dbPath = join(await getDatabasesPath(), DatabaseHelper.databaseName);
     await databaseFactory.deleteDatabase(dbPath);
   });
 
-  test('v6 database migrates to v7 money, owner-use, and item links',
+  test('v6 database migrates to v8 money, owner-use, and item links',
       () async {
     final legacy = await databaseFactory.openDatabase(
       dbPath,
@@ -196,17 +196,28 @@ void main() {
     final spoilage = await (await db.database).query('spoilage_log');
     expect((spoilage.single['estimated_value'] as num).toInt(), 2550);
 
+    expect(txns[0]['transcribed_to_book'], 0);
+    expect(txns[0]['transcribed_at'], isNull);
+    final columns =
+        await (await db.database).rawQuery('PRAGMA table_info(transactions)');
+    expect(columns.any((c) => c['name'] == 'transcribed_to_book'), isTrue);
+    expect(columns.any((c) => c['name'] == 'transcribed_at'), isTrue);
+    final indexes = await (await db.database)
+        .rawQuery("PRAGMA index_list('transactions')");
+    expect(indexes.any((i) => i['name'] == 'idx_txn_transcribed'), isTrue);
+
     final version = await (await db.database).getVersion();
-    expect(version, 7);
+    expect(version, 8);
 
     final dir = Directory(dirname(dbPath));
     final backups = await dir
         .list()
         .where((e) =>
-            e.path.contains('pre_v7_') && e.path.endsWith('.db'))
+            (e.path.contains('pre_v7_') || e.path.contains('pre_v8_')) &&
+            e.path.endsWith('.db'))
         .toList();
     expect(backups, isNotEmpty,
-        reason: 'migration must leave a pre-v7 recovery copy');
+        reason: 'migration must leave a pre-migration recovery copy');
     await db.close();
   });
 }

@@ -214,15 +214,6 @@ class InventoryProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteItem(int itemId) async {
-    try {
-      await _db.deleteItem(itemId);
-      await loadInventory();
-    } catch (e, s) {
-      logError('delete-item', e, s);
-    }
-  }
-
   /// Direct status set (Shelf long-press quick actions).
   Future<void> setStockStatus(int itemId, StockStatus status) async {
     try {

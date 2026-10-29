@@ -6,6 +6,7 @@ import '../utils/currency_format.dart';
 import '../utils/date_format.dart';
 import '../utils/pay_flow.dart';
 import '../utils/snackbars.dart';
+import 'edit_transaction_sheet.dart';
 
 class CustomerDetailScreen extends StatefulWidget {
   final int customerId;
@@ -72,7 +73,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         title: const Text('Delete this receipt?'),
         content: Text(
             '${t.customerName}: ${t.items.map((i) => i.itemName).join(", ")} - '
-            'remaining ${formatCurrency(t.remaining)} will be erased.'),
+            'remaining ${formatCurrency(t.remaining)} will be erased.'
+            '${t.transcribedToBook ? '\n\nThis entry is marked as transcribed to your physical book. Deleting it will not remove it from the book.' : ''}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
@@ -103,6 +105,79 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       );
     }
     return true;
+  }
+
+  Future<void> _showTransactionActions(ActiveTransaction t) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(t.transcribedToBook
+                  ? Icons.menu_book
+                  : Icons.menu_book_outlined,
+                  color: Colors.teal),
+              title: Text(t.transcribedToBook
+                  ? 'Untranscribe'
+                  : 'Mark transcribed to book'),
+              onTap: () => Navigator.pop(ctx, 'toggle'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit receipt'),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    final provider = context.read<TransactionsProvider>();
+    if (action == 'edit') {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => EditTransactionSheet(transaction: t),
+      );
+      await _load();
+      return;
+    }
+    final wasTranscribed = t.transcribedToBook;
+    if (wasTranscribed) {
+      await provider.unmarkTranscribed(t.id);
+    } else {
+      await provider.markTranscribed(t.id);
+    }
+    await _load();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    showAutoDismissSnackBar(
+      messenger,
+      message: wasTranscribed
+          ? 'Removed transcription mark'
+          : 'Marked transcribed to book',
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          messenger.clearSnackBars();
+          if (wasTranscribed) {
+            await provider.markTranscribed(t.id);
+          } else {
+            await provider.unmarkTranscribed(t.id);
+          }
+          if (mounted) await _load();
+        },
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -206,6 +281,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           t: t,
                           onChanged: _load,
                           onDelete: _confirmDelete,
+                          onLongPress: () => _showTransactionActions(t),
                         ),
                         ),
                     ],
@@ -219,11 +295,13 @@ class _ReceiptTile extends StatelessWidget {
   final ActiveTransaction t;
   final VoidCallback onChanged;
   final Future<bool> Function(ActiveTransaction) onDelete;
+  final VoidCallback onLongPress;
 
   const _ReceiptTile({
     required this.t,
     required this.onChanged,
     required this.onDelete,
+    required this.onLongPress,
   });
 
   @override
@@ -254,7 +332,9 @@ class _ReceiptTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       color: bgColor,
-      child: Padding(
+      child: InkWell(
+        onLongPress: onLongPress,
+        child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,8 +342,24 @@ class _ReceiptTile extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(daysLabel,
-                    style: TextStyle(fontSize: 12, color: textColor.withValues(alpha: 0.6))),
+                  child: Row(
+                    children: [
+                      if (t.transcribedToBook) ...[
+                        const Tooltip(
+                          message: 'In physical book',
+                          child:
+                              Icon(Icons.menu_book, size: 16, color: Colors.teal),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Expanded(
+                        child: Text(daysLabel,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: textColor.withValues(alpha: 0.6))),
+                      ),
+                    ],
+                  ),
                 ),
                 SizedBox(
                   height: 28,
@@ -327,7 +423,7 @@ class _ReceiptTile extends StatelessWidget {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
                 const SizedBox(width: 8),
                 SizedBox(
-                  height: 36,
+                  height: 48,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.payments, size: 18),
                     label: const Text('Pay', style: TextStyle(fontSize: 14)),
@@ -344,6 +440,7 @@ class _ReceiptTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -149,7 +149,7 @@ class SettingsScreen extends StatelessWidget {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('TalaKo'),
-              subtitle: Text('Version 2.14.0 · Offline only'),
+              subtitle: Text('Version 2.15.0 · Offline only'),
             ),
           ),
         ],

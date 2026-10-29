@@ -8,6 +8,7 @@ import '../utils/currency_format.dart';
 import '../utils/money.dart';
 import '../utils/snackbars.dart';
 import '../widgets/alphabet_strip.dart';
+import 'add_item_sheet.dart';
 
 class StockWatchScreen extends StatefulWidget {
   const StockWatchScreen({super.key});
@@ -210,15 +211,32 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
           ),
-          if (inv.filter != StockFilter.all) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.teal),
-              icon: const Icon(Icons.filter_alt_off, size: 18),
-              label: const Text('Clear filter'),
-              onPressed: () => inv.setFilter(StockFilter.all),
-            ),
-          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+            icon: Icon(inv.filter == StockFilter.all
+                ? Icons.add
+                : Icons.filter_alt_off,
+                size: 18),
+            label: Text(inv.filter == StockFilter.all
+                ? 'Add item'
+                : 'Clear filter'),
+            onPressed: () {
+              if (inv.filter != StockFilter.all) {
+                inv.setFilter(StockFilter.all);
+                return;
+              }
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (_) => const AddItemSheet(),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -279,9 +297,27 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
               trailing: item.stockStatus == StockStatus.cold
                   ? const Icon(Icons.check, size: 18, color: Colors.teal)
                   : null,
-              onTap: () {
-                Navigator.pop(ctx);
-                inv.setStockStatus(item.id!, StockStatus.cold);
+              onTap: () async {
+                final confirmed = await showDialog<bool>(
+                  context: ctx,
+                  builder: (dialogCtx) => AlertDialog(
+                    title: const Text('Archive this item?'),
+                    content: Text(
+                        '"${item.name}" will be hidden from Shopping. '
+                        'Its past receipts stay unchanged.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialogCtx, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(dialogCtx, true),
+                          child: const Text('Archive')),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return;
+                if (ctx.mounted) Navigator.pop(ctx);
+                await inv.setStockStatus(item.id!, StockStatus.cold);
               },
             ),
             ListTile(
@@ -318,6 +354,7 @@ class _StockWatchScreenState extends State<StockWatchScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text('Log loss: ${item.name}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -500,7 +537,8 @@ class _ItemCard extends StatelessWidget {
 
 Widget _statusChip(String label, Color color, String hint) {
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    constraints: const BoxConstraints(minHeight: 48),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
     decoration: BoxDecoration(
       color: color.withValues(alpha: 0.15),
       borderRadius: BorderRadius.circular(20),

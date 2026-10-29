@@ -74,7 +74,8 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
         right: 16,
         top: 16,
       ),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -135,6 +136,7 @@ class _OwnerUseSheetState extends State<OwnerUseSheet> {
           ),
           const SizedBox(height: 16),
         ],
+      ),
       ),
     );
   }
